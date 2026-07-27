@@ -1,0 +1,16 @@
+{
+  "name": "dropsync",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Ephemeral room-based file and link sharing",
+  "scripts": {
+    "dev": "concurrently -n client,server -c cyan,magenta \"npm run dev --prefix client\" \"npm run dev --prefix server\"",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "build": "npm run build --prefix client && npm run build --prefix server",
+    "preview": "npm run preview --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
