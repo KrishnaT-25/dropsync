@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: dropsync-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ROOM_DURATION_SECONDS
+        value: "300"
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: dropsync-redis
+          type: keyvalue
+          property: connectionString
+      - key: MONGODB_URI
+        sync: false
+
+  - type: keyvalue
+    name: dropsync-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []

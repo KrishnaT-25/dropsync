@@ -109,20 +109,52 @@ Active rooms are stored in Redis with native key expiry. A short expiry poller (
 
 Provision Redis and MongoDB as managed services and point `REDIS_URL` / `MONGODB_URI` at them. Deploy the Vite client separately (static host) and set `CLIENT_ORIGIN` to that origin. Health check: `GET /health`.
 
+### Vercel (frontend) + Render (API)
+
+This is the recommended split for DropSync.
+
+#### 1. MongoDB Atlas (free)
+
+1. Create a free cluster at [cloud.mongodb.com](https://cloud.mongodb.com).
+2. Add a database user and allow network access from anywhere (`0.0.0.0/0`) for Render.
+3. Copy the connection string, e.g. `mongodb+srv://USER:PASS@cluster.../dropsync`.
+
+#### 2. Render (API + Redis)
+
+The repo includes [`render.yaml`](render.yaml).
+
+1. Go to [dashboard.render.com](https://dashboard.render.com) → **New** → **Blueprint**.
+2. Connect the `KrishnaT-25/dropsync` GitHub repo and apply the blueprint.
+3. That creates:
+   - **dropsync-api** (Node web service, root `server/`)
+   - **dropsync-redis** (Render Key Value)
+4. In **dropsync-api** → Environment, set:
+   - `MONGODB_URI` = your Atlas URI
+   - `CLIENT_ORIGIN` = your Vercel URL (set/update after step 3), e.g. `https://dropsync.vercel.app`
+   - `ROOM_DURATION_SECONDS` = `300` (already in blueprint)
+   - `REDIS_URL` is wired from the Redis service automatically
+5. Deploy and copy the API URL, e.g. `https://dropsync-api.onrender.com`.
+
+Free Render web services spin down after idle time; the first request may be slow.
+
+#### 3. Vercel (client)
+
+1. Go to [vercel.com/new](https://vercel.com/new) and import `KrishnaT-25/dropsync`.
+2. Set **Root Directory** to `client`.
+3. Framework preset: Vite. Build: `npm run build`. Output: `dist`.
+4. Environment variable:
+   - `VITE_API_URL` = `https://dropsync-api.onrender.com` (no trailing slash)
+5. Deploy. Copy the site URL and set it as `CLIENT_ORIGIN` on Render, then redeploy the API if needed.
+
+SPA routing is handled by [`client/vercel.json`](client/vercel.json).
+
 ### Railway
 
 1. Create a new project and add **Redis** and **MongoDB** plugins (or external URLs).
 2. Add a service from this repo with root directory `server`.
 3. Set start command to `npm run start` (build command `npm run build`).
 4. Configure env vars: `PORT` (Railway sets this), `CLIENT_ORIGIN`, `ROOM_DURATION_SECONDS`, `REDIS_URL`, `MONGODB_URI`.
-5. Deploy the `client` build to Railway static hosting, Vercel, Netlify, or Cloudflare Pages; point `CLIENT_ORIGIN` at that URL.
-
-### Render
-
-1. Create a **Web Service** with root directory `server`, build `npm install && npm run build`, start `npm run start`.
-2. Add Render **Redis** and an external MongoDB (Atlas works well); set `REDIS_URL` and `MONGODB_URI`.
-3. Set `CLIENT_ORIGIN` to your static site URL.
-4. Host the client as a Static Site (`client`, build `npm install && npm run build`, publish `dist`).
+5. Deploy the `client` build to Vercel (or similar); point `CLIENT_ORIGIN` at that URL.
 
 ### Fly.io
 
@@ -137,7 +169,6 @@ fly deploy
 ```
 
 Use Fly Redis (Upstash) or an external Redis, and MongoDB Atlas (or similar) for `MONGODB_URI`.
-
 ## Scripts
 
 | Command | Description |
