@@ -145,7 +145,7 @@ function MeetingContent() {
           </span>
         }
       />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-8 sm:px-6">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-3 pb-6 sm:max-w-7xl sm:px-6">
         <MeetingPanel />
       </main>
     </AppShell>

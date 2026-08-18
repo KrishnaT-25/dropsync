@@ -1,17 +1,32 @@
 import { Copy, Check } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMeeting } from '../../context/MeetingContext'
 import { useMeetingSession } from '../../context/MeetingSessionContext'
+import type { MeetingTile } from '../../types'
 import { HostParticipantMenu } from './HostParticipantMenu'
 import { MeetingControls } from './MeetingControls'
-import { VideoTile } from './VideoTile'
+import { FullscreenExitHint, VideoTile } from './VideoTile'
+
+function pickScreenStage(tiles: MeetingTile[]): MeetingTile | null {
+  const localScreen = tiles.find((t) => t.id === 'screen-you' && t.stream)
+  if (localScreen) return localScreen
+  return tiles.find((t) => t.isScreenSharing && t.stream && !t.isYou) ?? null
+}
 
 export function MeetingPanel() {
-  const { error, tiles, localVideoRef } = useMeeting()
+  const { error, tiles, localVideoRef, screenVideoRef } = useMeeting()
   const { meeting, isHost, activityLog, participantId, rateLimitHint } = useMeetingSession()
   const [copied, setCopied] = useState(false)
+  const [browserFs, setBrowserFs] = useState(false)
+  const stageShellRef = useRef<HTMLDivElement>(null)
 
   const inviteUrl = meeting ? `${window.location.origin}/meet/${meeting.code}` : ''
+
+  const stageTile = useMemo(() => pickScreenStage(tiles), [tiles])
+  const stripTiles = useMemo(() => {
+    if (!stageTile) return tiles
+    return tiles.filter((t) => t.id !== stageTile.id)
+  }, [tiles, stageTile])
 
   const copyInvite = async () => {
     if (!inviteUrl) return
@@ -24,15 +39,60 @@ export function MeetingPanel() {
     }
   }
 
+  useEffect(() => {
+    const onFsChange = () => {
+      setBrowserFs(document.fullscreenElement === stageShellRef.current)
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
+
+  // When a share starts, grow into the stage layout; optional true fullscreen via button.
+  const toggleFullscreen = useCallback(async () => {
+    const el = stageShellRef.current
+    if (!el) return
+    try {
+      if (document.fullscreenElement === el) {
+        await document.exitFullscreen()
+      } else {
+        await el.requestFullscreen()
+      }
+    } catch {
+      // Browser may block without gesture; stage layout still fills the call.
+    }
+  }, [])
+
+  const renderTile = (tile: MeetingTile, size: 'stage' | 'pip' | 'grid') => (
+    <VideoTile
+      key={tile.id}
+      tile={tile}
+      size={size}
+      videoRef={
+        tile.id === 'screen-you'
+          ? screenVideoRef
+          : tile.isYou && !tile.isScreenSharing
+            ? localVideoRef
+            : undefined
+      }
+      isBrowserFullscreen={size === 'stage' ? browserFs : undefined}
+      onToggleFullscreen={size === 'stage' ? () => void toggleFullscreen() : undefined}
+      hostMenu={
+        !tile.isYou && !tile.isScreenSharing ? (
+          <HostParticipantMenu participantId={tile.id} participantName={tile.name} />
+        ) : undefined
+      }
+    />
+  )
+
   return (
     <div
-      className="rounded-2xl border p-4 sm:p-5"
+      className="rounded-2xl border p-3 sm:p-5"
       style={{
         background: 'var(--bg-elevated)',
         borderColor: 'var(--border)',
       }}
     >
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 sm:mb-4">
         <div>
           <p
             className="text-[11px] font-semibold uppercase tracking-[0.2em]"
@@ -71,20 +131,28 @@ export function MeetingPanel() {
         </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {tiles.map((tile) => (
-          <VideoTile
-            key={tile.id}
-            tile={tile}
-            videoRef={tile.isYou && !tile.isScreenSharing ? localVideoRef : undefined}
-            hostMenu={
-              !tile.isYou && !tile.isScreenSharing ? (
-                <HostParticipantMenu participantId={tile.id} participantName={tile.name} />
-              ) : undefined
-            }
-          />
-        ))}
-      </div>
+      {stageTile ? (
+        <div className="mb-3 flex flex-col gap-3 sm:mb-4">
+          <div
+            ref={stageShellRef}
+            className="relative h-[min(68vh,720px)] w-full bg-black sm:h-[min(72vh,820px)]"
+          >
+            {renderTile(stageTile, 'stage')}
+            {browserFs && (
+              <FullscreenExitHint onExit={() => void document.exitFullscreen()} />
+            )}
+          </div>
+          {stripTiles.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {stripTiles.map((tile) => renderTile(tile, 'pip'))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {tiles.map((tile) => renderTile(tile, 'grid'))}
+        </div>
+      )}
 
       <MeetingControls />
       {error && <p className="mt-3 text-center text-sm text-red-400">{error}</p>}
