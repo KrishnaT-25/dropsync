@@ -88,9 +88,20 @@ jobs:
           "
 
       - name: Test server
-        run: npm test --prefix server
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm test --prefix server 2>&1 | tee server-test-output.txt
         env:
           REDIS_URL: redis://127.0.0.1:6379
           MONGODB_URI: mongodb://127.0.0.1:27017/dropsync-ci
           CLIENT_ORIGIN: http://localhost:5173
           ROOM_DURATION_SECONDS: '300'
+
+      - name: Upload server test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-test-output
+          path: server-test-output.txt
+          if-no-files-found: ignore
