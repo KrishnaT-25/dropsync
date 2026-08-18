@@ -10,6 +10,7 @@ import {
 } from 'react'
 import * as api from '../services/api'
 import { ApiRequestError } from '../services/api'
+import { fileTransferManager } from '../services/fileTransfer'
 import * as socket from '../services/socket'
 import type { ActivityItem, ConnectionStatus, JoinRoomResult, Participant, RoomState } from '../types'
 import { applyRoomState, mapApiRoom, mergeActivity } from '../utils/roomMapper'
@@ -76,6 +77,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
 
   const participantIdRef = useRef<string | null>(null)
   const roomCodeRef = useRef<string | null>(null)
+  const roomRef = useRef<RoomState | null>(null)
+  const pendingFilesRef = useRef(new Map<string, File>())
+  const knownPeersRef = useRef(new Set<string>())
 
   useEffect(() => {
     participantIdRef.current = participantId
@@ -83,7 +87,37 @@ export function RoomProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     roomCodeRef.current = room?.code ?? null
-  }, [room?.code])
+    roomRef.current = room
+  }, [room])
+
+  const patchFileActivity = useCallback(
+    (
+      match: { transferId?: string; activityId?: string },
+      patch: Partial<NonNullable<ActivityItem['fileMeta']>>,
+    ) => {
+      setRoom((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          activities: prev.activities.map((a) => {
+            if (a.type !== 'file' || !a.fileMeta) return a
+            const byTransfer =
+              match.transferId && a.fileMeta.transferId === match.transferId
+            const byActivity = match.activityId && a.id === match.activityId
+            if (!byTransfer && !byActivity) return a
+            return {
+              ...a,
+              fileMeta: {
+                ...a.fileMeta,
+                ...patch,
+              },
+            }
+          }),
+        }
+      })
+    },
+    [],
+  )
 
   const connectToRoom = useCallback(async (code: string, pid: string, mappedRoom: RoomState) => {
     setRoom(mappedRoom)
@@ -100,16 +134,46 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       return false
     }
 
-    setRoom(applyRoomState(mappedRoom, ack.room, pid))
+    const next = applyRoomState(mappedRoom, ack.room, pid)
+    setRoom(next)
     setConnection({ connected: true, error: null })
+
+    knownPeersRef.current = new Set(next.participants.map((p) => p.id))
+    fileTransferManager.configure({
+      selfId: pid,
+      socket: socket.getSocket(),
+      onProgress: (update) => {
+        patchFileActivity(
+          { transferId: update.transferId, activityId: update.activityId || undefined },
+          {
+            progress: update.progress,
+            status: update.status,
+            transferPath: update.transferPath,
+            objectUrl: update.objectUrl,
+            downloadUrl: update.downloadUrl,
+          },
+        )
+      },
+    })
+
     return true
-  }, [])
+  }, [patchFileActivity])
 
   useEffect(() => {
     const handleRoomState = (apiRoom: Parameters<typeof applyRoomState>[1]) => {
       const pid = participantIdRef.current
       if (!pid) return
-      setRoom((prev) => applyRoomState(prev, apiRoom, pid))
+      setRoom((prev) => {
+        const next = applyRoomState(prev, apiRoom, pid)
+        const nextIds = new Set(next.participants.map((p) => p.id))
+        for (const id of knownPeersRef.current) {
+          if (!nextIds.has(id) && id !== pid) {
+            fileTransferManager.handlePeerLeft(id)
+          }
+        }
+        knownPeersRef.current = nextIds
+        return next
+      })
     }
 
     const handleActivity = (activity: ActivityItem & { timestamp: string }) => {
@@ -128,12 +192,32 @@ export function RoomProvider({ children }: { children: ReactNode }) {
           activities: mergeActivity(prev.activities, mapped),
         }
       })
+
+      const transferId = mapped.fileMeta?.transferId
+      if (
+        mapped.type === 'file' &&
+        transferId &&
+        mapped.senderId === pid &&
+        pendingFilesRef.current.has(transferId)
+      ) {
+        const file = pendingFilesRef.current.get(transferId)!
+        pendingFilesRef.current.delete(transferId)
+        const recipients =
+          roomRef.current?.participants.filter((p) => p.id !== pid).map((p) => p.id) ?? []
+        void fileTransferManager.sendFileToPeers({
+          file,
+          transferId,
+          activityId: mapped.id,
+          recipientIds: recipients,
+        })
+      }
     }
 
     const handleExpired = () => {
       setRoom(null)
       setParticipantId(null)
       saveSession(null)
+      fileTransferManager.dispose()
       socket.disconnectSocket()
       setConnection({ connected: false, error: 'Room expired' })
     }
@@ -146,11 +230,31 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       setConnection((prev) => ({ ...prev, connected: false }))
     }
 
+    const handleFileComplete = (payload: {
+      activityId: string
+      transferId: string
+      downloadUrl: string
+      transferPath: 'direct' | 'relay' | 'storage'
+      senderParticipantId: string
+    }) => {
+      patchFileActivity(
+        { transferId: payload.transferId, activityId: payload.activityId },
+        {
+          status: 'complete',
+          progress: 1,
+          transferPath: payload.transferPath,
+          downloadUrl: payload.downloadUrl,
+          objectUrl: payload.downloadUrl,
+        },
+      )
+    }
+
     socket.onRoomState(handleRoomState)
     socket.onActivity(handleActivity)
     socket.onRoomExpired(handleExpired)
     socket.onSocketConnect(handleConnect)
     socket.onSocketDisconnect(handleDisconnect)
+    socket.onFileTransferComplete(handleFileComplete)
 
     return () => {
       socket.offRoomState(handleRoomState)
@@ -158,8 +262,9 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       socket.offRoomExpired(handleExpired)
       socket.offSocketConnect(handleConnect)
       socket.offSocketDisconnect(handleDisconnect)
+      socket.offFileTransferComplete(handleFileComplete)
     }
-  }, [])
+  }, [patchFileActivity])
 
   const createRoom = useCallback(async (password?: string) => {
     setIsLoading(true)
@@ -218,6 +323,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const leaveRoom = useCallback(() => {
     socket.emitLeaveRoom()
     socket.disconnectSocket()
+    fileTransferManager.dispose()
     setRoom(null)
     setParticipantId(null)
     saveSession(null)
@@ -333,15 +439,57 @@ export function RoomProvider({ children }: { children: ReactNode }) {
 
   const sendFile = useCallback(
     (file: File) => {
+      const transferId = crypto.randomUUID()
+      pendingFilesRef.current.set(transferId, file)
+
+      if (connection.connected) {
+        socket.emitActivity({
+          type: 'file',
+          content: file.name,
+          fileMeta: {
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: file.type || 'application/octet-stream',
+            transferId,
+            progress: 0,
+            status: 'transferring',
+          },
+        })
+        return
+      }
+
+      // Offline: local-only
       const objectUrl = URL.createObjectURL(file)
-      broadcastActivity('file', file.name, {
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type || 'application/octet-stream',
-        objectUrl,
+      pendingFilesRef.current.delete(transferId)
+      setRoom((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          activities: [
+            ...prev.activities,
+            {
+              id: crypto.randomUUID(),
+              type: 'file',
+              content: file.name,
+              sender: 'You',
+              senderId: participantId ?? undefined,
+              timestamp: new Date(),
+              fileMeta: {
+                fileName: file.name,
+                fileSize: file.size,
+                mimeType: file.type || 'application/octet-stream',
+                transferId,
+                objectUrl,
+                progress: 1,
+                status: 'complete',
+                transferPath: 'direct',
+              },
+            },
+          ],
+        }
       })
     },
-    [broadcastActivity],
+    [connection.connected, participantId],
   )
 
   const addSystemActivity = useCallback(

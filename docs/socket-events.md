@@ -140,6 +140,39 @@ When the transport disconnects with an active session:
 
 ---
 
+### `file-offer` / `file-answer` / `file-ice-candidate`
+
+WebRTC signaling for **file-transfer data channels only** (not meeting media).
+
+**Payload**
+
+```json
+{
+  "targetParticipantId": "uuid",
+  "senderParticipantId": "uuid",
+  "payload": {}
+}
+```
+
+Relayed by the server only to the target participant’s socket.
+
+---
+
+### `file-transfer-complete`
+
+After a storage-fallback upload, tell the room a download URL is ready.
+
+```json
+{
+  "activityId": "uuid",
+  "transferId": "uuid",
+  "downloadUrl": "https://...",
+  "transferPath": "storage"
+}
+```
+
+---
+
 ## Server → client
 
 ### `room-state`
@@ -147,6 +180,26 @@ When the transport disconnects with an active session:
 Full room snapshot after joins, leaves, meeting updates, etc.
 
 **Payload:** `RoomRecord` (same shape as REST)
+
+---
+
+### `file-offer` / `file-answer` / `file-ice-candidate`
+
+Same shape as the client→server events; delivered to the addressed peer.
+
+---
+
+### `file-transfer-complete`
+
+```json
+{
+  "activityId": "uuid",
+  "transferId": "uuid",
+  "downloadUrl": "https://...",
+  "transferPath": "storage",
+  "senderParticipantId": "uuid"
+}
+```
 
 ---
 

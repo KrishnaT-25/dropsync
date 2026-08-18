@@ -150,6 +150,54 @@ Join an existing room as a new participant.
 
 ---
 
+## `GET /api/ice-servers`
+
+ICE servers for file-transfer peer connections (STUN always; TURN only if configured).
+
+### Response `200`
+
+```json
+{
+  "iceServers": [{ "urls": "stun:stun.l.google.com:19302" }],
+  "turnConfigured": false
+}
+```
+
+---
+
+## `GET /api/transfer-stats`
+
+In-memory counters for completed transfers.
+
+### Response `200`
+
+```json
+{
+  "direct": 1,
+  "relay": 0,
+  "storage": 2,
+  "total": 3
+}
+```
+
+---
+
+## `POST /api/transfers/upload`
+
+Fallback upload when P2P fails (raw body, max 32MB). Headers: `x-file-name`, `x-mime-type`.
+
+### Response `201`
+
+```json
+{
+  "transferId": "uuid",
+  "downloadUrl": "https://host/api/transfers/{id}/download",
+  "path": "storage"
+}
+```
+
+---
+
 ## Shared types
 
 ### `RoomRecord`

@@ -58,6 +58,56 @@ export function getRoom(code: string): Promise<{ room: ApiRoomRecord }> {
   return request<{ room: ApiRoomRecord }>(`/api/rooms/${code}`)
 }
 
+export function getIceServers(): Promise<{
+  iceServers: RTCIceServer[]
+  turnConfigured: boolean
+}> {
+  return request('/api/ice-servers')
+}
+
+export function getTransferStats(): Promise<{
+  direct: number
+  relay: number
+  storage: number
+  total: number
+}> {
+  return request('/api/transfer-stats')
+}
+
+export async function recordTransferStat(
+  path: 'direct' | 'relay' | 'storage',
+): Promise<void> {
+  try {
+    await request('/api/transfers/stats', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    })
+  } catch {
+    // non-critical
+  }
+}
+
+export async function uploadFallbackFile(
+  file: File,
+): Promise<{ transferId: string; downloadUrl: string; path: 'storage' }> {
+  const response = await fetch(`${API_BASE}/api/transfers/upload`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'x-file-name': file.name,
+      'x-mime-type': file.type || 'application/octet-stream',
+    },
+    body: file,
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new ApiRequestError(body?.error ?? `upload_failed_${response.status}`, response.status)
+  }
+
+  return response.json() as Promise<{ transferId: string; downloadUrl: string; path: 'storage' }>
+}
+
 export async function checkHealth(): Promise<boolean> {
   try {
     const response = await fetch(`${API_BASE}/health`)

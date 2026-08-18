@@ -32,7 +32,17 @@ function FileRow({ item }: { item: ActivityItem }) {
   const meta = item.fileMeta
   if (!meta) return null
 
-  const canDownload = Boolean(meta.objectUrl)
+  const canDownload = Boolean(meta.objectUrl || meta.downloadUrl)
+  const href = meta.objectUrl ?? meta.downloadUrl
+  const progress = meta.progress ?? (meta.status === 'complete' ? 1 : 0)
+  const pathLabel =
+    meta.transferPath === 'storage'
+      ? 'via relay'
+      : meta.transferPath === 'relay'
+        ? 'via TURN'
+        : meta.transferPath === 'direct'
+          ? 'via direct connection'
+          : null
 
   return (
     <div
@@ -67,21 +77,35 @@ function FileRow({ item }: { item: ActivityItem }) {
           </p>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {formatFileSize(meta.fileSize)}
-            {!canDownload && ' · metadata only (P2P transfer coming soon)'}
+            {pathLabel ? ` · ${pathLabel}` : ''}
+            {meta.status === 'failed' ? ' · transfer failed' : ''}
+            {meta.status === 'transferring' ? ` · ${Math.round(progress * 100)}%` : ''}
           </p>
 
-          {canDownload && meta.objectUrl && isImageMime(meta.mimeType) && (
+          {meta.status === 'transferring' && (
+            <div
+              className="mt-2 h-1.5 w-full overflow-hidden rounded-full"
+              style={{ background: 'var(--border)' }}
+            >
+              <div
+                className="h-full rounded-full bg-accent transition-all"
+                style={{ width: `${Math.max(4, Math.round(progress * 100))}%` }}
+              />
+            </div>
+          )}
+
+          {canDownload && href && isImageMime(meta.mimeType) && (
             <img
-              src={meta.objectUrl}
+              src={href}
               alt={meta.fileName}
               className="mt-2 max-h-40 rounded-lg border object-contain"
               style={{ borderColor: 'var(--border)' }}
             />
           )}
 
-          {canDownload && meta.objectUrl && (
+          {canDownload && href && (
             <a
-              href={meta.objectUrl}
+              href={href}
               download={meta.fileName}
               className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
             >

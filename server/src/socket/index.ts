@@ -22,6 +22,11 @@ const activitySchema = z.object({
       fileName: z.string(),
       fileSize: z.number(),
       mimeType: z.string(),
+      transferId: z.string().uuid().optional(),
+      progress: z.number().min(0).max(1).optional(),
+      status: z.enum(['pending', 'transferring', 'complete', 'failed']).optional(),
+      transferPath: z.enum(['direct', 'relay', 'storage']).optional(),
+      downloadUrl: z.string().url().optional(),
     })
     .optional(),
 })
@@ -31,6 +36,12 @@ const meetingStateSchema = z.object({
   isMuted: z.boolean().optional(),
   isCameraOff: z.boolean().optional(),
   isScreenSharing: z.boolean().optional(),
+})
+
+const fileSignalSchema = z.object({
+  targetParticipantId: z.string().uuid(),
+  senderParticipantId: z.string().uuid(),
+  payload: z.unknown(),
 })
 
 interface SocketSession {
@@ -141,6 +152,51 @@ export function createSocketServer(
       if (activity) {
         io.to(session.code).emit('activity', activity as ActivityItem)
       }
+    })
+
+    const relayFileSignal = async (
+      event: 'file-offer' | 'file-answer' | 'file-ice-candidate',
+      payload: unknown,
+    ) => {
+      if (!session) return
+      const parsed = fileSignalSchema.safeParse(payload)
+      if (!parsed.success) return
+      if (parsed.data.senderParticipantId !== session.participantId) return
+
+      const room = await roomStore.getRoom(session.code)
+      if (!room) return
+
+      const target = room.participants.find((p) => p.id === parsed.data.targetParticipantId)
+      if (!target?.socketId) return
+
+      io.to(target.socketId).emit(event, parsed.data)
+    }
+
+    socket.on('file-offer', (payload) => {
+      void relayFileSignal('file-offer', payload)
+    })
+    socket.on('file-answer', (payload) => {
+      void relayFileSignal('file-answer', payload)
+    })
+    socket.on('file-ice-candidate', (payload) => {
+      void relayFileSignal('file-ice-candidate', payload)
+    })
+
+    socket.on('file-transfer-complete', async (payload) => {
+      if (!session) return
+      const schema = z.object({
+        activityId: z.string(),
+        transferId: z.string().uuid(),
+        downloadUrl: z.string().url(),
+        transferPath: z.enum(['direct', 'relay', 'storage']),
+      })
+      const parsed = schema.safeParse(payload)
+      if (!parsed.success) return
+
+      io.to(session.code).emit('file-transfer-complete', {
+        ...parsed.data,
+        senderParticipantId: session.participantId,
+      })
     })
 
     socket.on('leave-room', async () => {

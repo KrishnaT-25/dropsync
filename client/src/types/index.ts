@@ -5,6 +5,11 @@ export interface FileMeta {
   fileSize: number
   mimeType: string
   objectUrl?: string
+  transferId?: string
+  progress?: number
+  status?: 'pending' | 'transferring' | 'complete' | 'failed'
+  transferPath?: 'direct' | 'relay' | 'storage'
+  downloadUrl?: string
 }
 
 export interface ActivityItem {

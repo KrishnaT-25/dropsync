@@ -11,6 +11,11 @@ export interface ActivityItem {
     fileName: string
     fileSize: number
     mimeType: string
+    transferId?: string
+    progress?: number
+    status?: 'pending' | 'transferring' | 'complete' | 'failed'
+    transferPath?: 'direct' | 'relay' | 'storage'
+    downloadUrl?: string
   }
 }
 

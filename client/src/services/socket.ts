@@ -16,6 +16,11 @@ export interface ActivityPayload {
     fileName: string
     fileSize: number
     mimeType: string
+    transferId?: string
+    progress?: number
+    status?: 'pending' | 'transferring' | 'complete' | 'failed'
+    transferPath?: 'direct' | 'relay' | 'storage'
+    downloadUrl?: string
   }
 }
 
@@ -118,6 +123,30 @@ export function offSocketConnect(handler: () => void) {
 
 export function offSocketDisconnect(handler: () => void) {
   getSocket().off('disconnect', handler)
+}
+
+export function onFileTransferComplete(
+  handler: (payload: {
+    activityId: string
+    transferId: string
+    downloadUrl: string
+    transferPath: 'direct' | 'relay' | 'storage'
+    senderParticipantId: string
+  }) => void,
+) {
+  getSocket().on('file-transfer-complete', handler)
+}
+
+export function offFileTransferComplete(
+  handler: (payload: {
+    activityId: string
+    transferId: string
+    downloadUrl: string
+    transferPath: 'direct' | 'relay' | 'storage'
+    senderParticipantId: string
+  }) => void,
+) {
+  getSocket().off('file-transfer-complete', handler)
 }
 
 export function isSocketConnected(): boolean {
