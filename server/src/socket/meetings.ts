@@ -1,5 +1,10 @@
 import type { Server, Socket } from 'socket.io'
 import { z } from 'zod'
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  clientIpFromSocket,
+} from '../services/rateLimit.js'
 import { meetingStore, toPublicMeeting } from '../store/meetingStore.js'
 import type { MeetingEndedReason } from '../types.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
@@ -22,6 +27,12 @@ const targetSchema = z.object({
 
 const activitySchema = z.object({
   content: z.string().trim().min(1).max(200),
+})
+
+const mediaSignalSchema = z.object({
+  targetParticipantId: z.string().uuid(),
+  senderParticipantId: z.string().uuid(),
+  payload: z.unknown(),
 })
 
 export interface MeetingSocketSession {
@@ -55,6 +66,17 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
   }
 
   socket.on('join-meeting', async (payload, ack) => {
+    const ip = clientIpFromSocket(socket.handshake)
+    const joinLimit = await checkRateLimit(
+      `join-meeting:${ip}`,
+      RATE_LIMITS.joinIp.max,
+      RATE_LIMITS.joinIp.windowMs,
+    )
+    if (!joinLimit.allowed) {
+      ack?.({ ok: false, error: 'Slow down a bit', code: 'rate_limited' })
+      return
+    }
+
     const parsed = joinMeetingSchema.safeParse(payload)
     if (!parsed.success) {
       ack?.({ ok: false, error: 'Invalid join payload' })
@@ -64,6 +86,17 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
     const code = normalizeRoomCode(parsed.data.code)
     if (!isValidRoomCode(code)) {
       ack?.({ ok: false, error: 'Invalid meeting code' })
+      return
+    }
+
+    const existing = await meetingStore.getMeeting(code)
+    if (!existing) {
+      ack?.({ ok: false, error: 'Meeting not found or participant invalid' })
+      return
+    }
+    const alreadyIn = existing.participants.some((p) => p.id === parsed.data.participantId)
+    if (!alreadyIn && existing.participants.length >= 6) {
+      ack?.({ ok: false, error: 'This meeting supports at most 6 participants.' })
       return
     }
 
@@ -122,21 +155,75 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
     }
   })
 
-  socket.on('meeting-activity', async (payload) => {
-    if (!meetingSession) return
+  socket.on('meeting-activity', async (payload, ack) => {
+    if (!meetingSession) {
+      ack?.({ ok: false, error: 'Not in a meeting' })
+      return
+    }
+
+    const activityLimit = await checkRateLimit(
+      `meeting-activity:${socket.id}`,
+      RATE_LIMITS.activity.max,
+      RATE_LIMITS.activity.windowMs,
+    )
+    if (!activityLimit.allowed) {
+      ack?.({ ok: false, error: 'Slow down a bit', code: 'rate_limited' })
+      return
+    }
+
     const parsed = activitySchema.safeParse(payload)
-    if (!parsed.success) return
+    if (!parsed.success) {
+      ack?.({ ok: false, error: 'Invalid activity' })
+      return
+    }
 
     const meeting = await meetingStore.getMeeting(meetingSession.code)
-    if (!meeting) return
+    if (!meeting) {
+      ack?.({ ok: false, error: 'Meeting not found' })
+      return
+    }
     const actor = meeting.participants.find((p) => p.id === meetingSession!.participantId)
-    if (!actor) return
+    if (!actor) {
+      ack?.({ ok: false, error: 'Participant not found' })
+      return
+    }
 
     io.to(meetingChannel(meetingSession.code)).emit('meeting-activity', {
       actorId: actor.id,
       actorName: actor.name,
       content: parsed.data.content,
     })
+    ack?.({ ok: true })
+  })
+
+  const relayMediaSignal = async (
+    event: 'meeting-offer' | 'meeting-answer' | 'meeting-ice-candidate',
+    payload: unknown,
+  ) => {
+    if (!meetingSession) return
+    const parsed = mediaSignalSchema.safeParse(payload)
+    if (!parsed.success) return
+    if (parsed.data.senderParticipantId !== meetingSession.participantId) return
+
+    const meeting = await meetingStore.getMeeting(meetingSession.code)
+    if (!meeting) return
+    const target = meeting.participants.find((p) => p.id === parsed.data.targetParticipantId)
+    if (!target?.socketId) {
+      // Fallback: broadcast on meeting channel; clients filter by targetParticipantId
+      socket.to(meetingChannel(meetingSession.code)).emit(event, parsed.data)
+      return
+    }
+    io.to(target.socketId).emit(event, parsed.data)
+  }
+
+  socket.on('meeting-offer', (payload) => {
+    void relayMediaSignal('meeting-offer', payload)
+  })
+  socket.on('meeting-answer', (payload) => {
+    void relayMediaSignal('meeting-answer', payload)
+  })
+  socket.on('meeting-ice-candidate', (payload) => {
+    void relayMediaSignal('meeting-ice-candidate', payload)
   })
 
   socket.on('host-mute', async (payload) => {

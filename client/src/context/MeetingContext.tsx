@@ -8,6 +8,8 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { meetingWebRTC } from '../services/meetingWebRTC'
+import { getMeetingSocket } from '../services/meetingSocket'
 import type { MeetingTile } from '../types'
 import { useMeetingSession } from './MeetingSessionContext'
 
@@ -52,12 +54,14 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [streamVersion, setStreamVersion] = useState(0)
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream | null>>({})
 
   const localStreamRef = useRef<MediaStream | null>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const screenVideoRef = useRef<HTMLVideoElement | null>(null)
   const acquiringRef = useRef(false)
+  const webrtcReadyRef = useRef(false)
 
   const attachStream = useCallback((video: HTMLVideoElement | null, stream: MediaStream | null) => {
     if (!video) return
@@ -80,11 +84,14 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
   }, [isScreenSharing, streamVersion, attachStream])
 
   const stopPreview = useCallback(() => {
+    meetingWebRTC.dispose()
+    webrtcReadyRef.current = false
     stopStream(localStreamRef.current)
     stopStream(screenStreamRef.current)
     localStreamRef.current = null
     screenStreamRef.current = null
     setPreviewStream(null)
+    setRemoteStreams({})
     attachStream(localVideoRef.current, null)
     attachStream(screenVideoRef.current, null)
     setIsMuted(false)
@@ -95,6 +102,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return () => {
+      meetingWebRTC.dispose()
       stopStream(localStreamRef.current)
       stopStream(screenStreamRef.current)
     }
@@ -128,6 +136,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       setPreviewStream(stream)
       setStreamVersion((v) => v + 1)
       attachStream(localVideoRef.current, stream.getVideoTracks().length ? stream : null)
+      meetingWebRTC.setLocalStream(stream)
       return stream
     } finally {
       acquiringRef.current = false
@@ -144,12 +153,61 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     }
   }, [acquireMedia])
 
+  // Configure mesh when joined; tear down when left.
+  useEffect(() => {
+    if (!isJoined || !participantId) {
+      if (webrtcReadyRef.current) {
+        meetingWebRTC.dispose()
+        webrtcReadyRef.current = false
+        setRemoteStreams({})
+      }
+      return
+    }
+
+    meetingWebRTC.configure({
+      selfId: participantId,
+      socket: getMeetingSocket(),
+      onRemoteStream: (peerId, stream) => {
+        setRemoteStreams((prev) => {
+          if (prev[peerId] === stream) return prev
+          return { ...prev, [peerId]: stream }
+        })
+        setStreamVersion((v) => v + 1)
+      },
+      onMeshError: (message) => setError(message),
+    })
+    webrtcReadyRef.current = true
+
+    if (localStreamRef.current) {
+      meetingWebRTC.setLocalStream(localStreamRef.current)
+    } else {
+      void acquireMedia().catch(() => {
+        setError('Camera or microphone access was denied.')
+      })
+    }
+
+    return () => {
+      meetingWebRTC.dispose()
+      webrtcReadyRef.current = false
+    }
+  }, [isJoined, participantId, acquireMedia])
+
+  // Sync peer connections whenever roster changes.
+  useEffect(() => {
+    if (!isJoined || !participantId || !meeting) return
+    const remoteIds = meeting.participants.filter((p) => p.id !== participantId).map((p) => p.id)
+    void meetingWebRTC.syncPeers(remoteIds).then((result) => {
+      if (!result.ok && result.error) setError(result.error)
+    })
+  }, [isJoined, participantId, meeting])
+
   useEffect(() => {
     const onForceMute = () => {
       if (!localStreamRef.current) return
       localStreamRef.current.getAudioTracks().forEach((track) => {
         track.enabled = false
       })
+      meetingWebRTC.setAudioEnabled(false)
       setIsMuted(true)
       emitMediaState({ isMuted: true })
     }
@@ -177,6 +235,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     localStreamRef.current.getAudioTracks().forEach((track) => {
       track.enabled = !next
     })
+    meetingWebRTC.setAudioEnabled(!next)
     setIsMuted(next)
     emitMediaState({ isMuted: next })
   }, [emitMediaState, ensurePreview, isMuted])
@@ -194,10 +253,20 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     localStreamRef.current.getVideoTracks().forEach((track) => {
       track.enabled = !next
     })
+    // If not screen sharing, push camera (or null) to peers.
+    if (!isScreenSharing) {
+      const cam = next ? null : localStreamRef.current.getVideoTracks()[0] ?? null
+      void meetingWebRTC.replaceVideoTrack(cam)
+    }
     setIsCameraOff(next)
     setStreamVersion((v) => v + 1)
     emitMediaState({ isCameraOff: next })
-  }, [emitMediaState, ensurePreview, isCameraOff])
+  }, [emitMediaState, ensurePreview, isCameraOff, isScreenSharing])
+
+  const restoreCameraVideoTrack = useCallback(async () => {
+    const cam = !isCameraOff ? localStreamRef.current?.getVideoTracks()[0] ?? null : null
+    await meetingWebRTC.replaceVideoTrack(cam)
+  }, [isCameraOff])
 
   const toggleScreenShare = useCallback(async () => {
     if (isScreenSharing) {
@@ -208,6 +277,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       setStreamVersion((v) => v + 1)
       emitMediaState({ isScreenSharing: false })
       emitActivity('stopped screen sharing')
+      await restoreCameraVideoTrack()
       return
     }
 
@@ -224,6 +294,9 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       emitMediaState({ isScreenSharing: true })
       emitActivity('started screen sharing')
 
+      const displayTrack = stream.getVideoTracks()[0] ?? null
+      if (displayTrack) await meetingWebRTC.replaceVideoTrack(displayTrack)
+
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         stopStream(screenStreamRef.current)
         screenStreamRef.current = null
@@ -232,11 +305,12 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
         setStreamVersion((v) => v + 1)
         emitMediaState({ isScreenSharing: false })
         emitActivity('stopped screen sharing')
+        void restoreCameraVideoTrack()
       })
     } catch {
       setError('Screen sharing was cancelled or blocked.')
     }
-  }, [attachStream, emitActivity, emitMediaState, isScreenSharing])
+  }, [attachStream, emitActivity, emitMediaState, isScreenSharing, restoreCameraVideoTrack])
 
   const tiles = useMemo<MeetingTile[]>(() => {
     if (!meeting || !isJoined) return []
@@ -265,7 +339,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
           isMuted: remote.isMuted,
           isCameraOff: remote.isCameraOff,
           isScreenSharing: remote.isScreenSharing,
-          stream: null,
+          stream: remoteStreams[remote.id] ?? null,
         })
       })
 
@@ -280,7 +354,16 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     }
 
     return result
-  }, [meeting, isJoined, participantId, isMuted, isCameraOff, isScreenSharing, streamVersion])
+  }, [
+    meeting,
+    isJoined,
+    participantId,
+    isMuted,
+    isCameraOff,
+    isScreenSharing,
+    streamVersion,
+    remoteStreams,
+  ])
 
   const value = useMemo(
     () => ({

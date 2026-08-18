@@ -52,6 +52,7 @@ export function RoomPage() {
     restoreRoom,
     isLoading,
     connection,
+    rateLimitHint,
   } = useRoom()
 
   useEffect(() => {
@@ -141,6 +142,7 @@ export function RoomPage() {
             onSendClipboard={sendClipboard}
             onSendCode={sendCodeSnippet}
             onSendFile={sendFile}
+            rateLimitHint={rateLimitHint}
           />
         </section>
       </main>

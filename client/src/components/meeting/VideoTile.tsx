@@ -23,7 +23,15 @@ export function VideoTile({ tile, videoRef, hostMenu }: VideoTileProps) {
     }
   }, [tile.stream, ref])
 
-  const showPlaceholder = !tile.stream || Boolean(tile.isCameraOff)
+  // Mute remote audio when sender reports muted (UI intent), even if track is live.
+  useEffect(() => {
+    const video = ref.current
+    if (!video || tile.isYou) return
+    video.muted = Boolean(tile.isMuted)
+  }, [tile.isMuted, tile.isYou, ref])
+
+  const showPlaceholder =
+    !tile.stream || (Boolean(tile.isCameraOff) && !tile.isScreenSharing)
 
   return (
     <div
@@ -37,7 +45,7 @@ export function VideoTile({ tile, videoRef, hostMenu }: VideoTileProps) {
         ref={ref}
         autoPlay
         playsInline
-        muted={tile.isYou}
+        muted={tile.isYou || Boolean(tile.isMuted)}
         className={`h-full w-full object-cover ${showPlaceholder ? 'hidden' : 'block'}`}
       />
 

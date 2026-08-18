@@ -106,6 +106,10 @@ export class MeetingStore {
     const meeting = await this.getMeeting(code)
     if (!meeting) return null
 
+    if (meeting.participants.length >= 6) {
+      return null
+    }
+
     const participantId = uuidv4()
     const participant: MeetingParticipant = {
       id: participantId,

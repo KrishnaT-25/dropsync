@@ -8,6 +8,22 @@ jobs:
   client-and-server:
     runs-on: ubuntu-latest
 
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      REDIS_URL: redis://127.0.0.1:6379
+      MONGODB_URI: mongodb://127.0.0.1:27017/dropsync-ci
+      CLIENT_ORIGIN: http://localhost:5173
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,3 +63,6 @@ jobs:
 
       - name: Build server
         run: npm run build --prefix server
+
+      - name: Test server
+        run: npm test --prefix server

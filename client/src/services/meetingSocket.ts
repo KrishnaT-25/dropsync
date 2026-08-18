@@ -33,8 +33,12 @@ export function emitMeetingMediaState(payload: {
   getSocket().emit('meeting-media-state', payload)
 }
 
-export function emitMeetingActivity(content: string) {
-  getSocket().emit('meeting-activity', { content })
+export function emitMeetingActivity(content: string): Promise<{ ok: boolean; error?: string; code?: string }> {
+  return new Promise((resolve) => {
+    getSocket().emit('meeting-activity', { content }, (ack: { ok: boolean; error?: string; code?: string }) => {
+      resolve(ack ?? { ok: true })
+    })
+  })
 }
 
 export function emitHostMute(targetParticipantId: string) {

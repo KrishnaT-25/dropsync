@@ -4,6 +4,11 @@ import { createAdapter } from '@socket.io/redis-adapter'
 import { Server } from 'socket.io'
 import { z } from 'zod'
 import { config } from '../config.js'
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  clientIpFromSocket,
+} from '../services/rateLimit.js'
 import { roomStore } from '../store/roomStore.js'
 import type { ActivityItem } from '../types.js'
 import { toPublicRoom } from '../utils/publicRoom.js'
@@ -70,6 +75,17 @@ export function createSocketServer(
     registerMeetingSocketHandlers(io, socket)
 
     socket.on('join-room', async (payload, ack) => {
+      const ip = clientIpFromSocket(socket.handshake)
+      const joinLimit = await checkRateLimit(
+        `join-room:${ip}`,
+        RATE_LIMITS.joinIp.max,
+        RATE_LIMITS.joinIp.windowMs,
+      )
+      if (!joinLimit.allowed) {
+        ack?.({ ok: false, error: 'Slow down a bit', code: 'rate_limited' })
+        return
+      }
+
       const parsed = joinSchema.safeParse(payload)
       if (!parsed.success) {
         ack?.({ ok: false, error: 'Invalid join payload' })
@@ -95,14 +111,33 @@ export function createSocketServer(
       socket.to(code).emit('room-state', toPublicRoom(room))
     })
 
-    socket.on('activity', async (payload) => {
-      if (!roomSession) return
+    socket.on('activity', async (payload, ack) => {
+      if (!roomSession) {
+        ack?.({ ok: false, error: 'Not in a room' })
+        return
+      }
+
+      const activityLimit = await checkRateLimit(
+        `activity:${socket.id}`,
+        RATE_LIMITS.activity.max,
+        RATE_LIMITS.activity.windowMs,
+      )
+      if (!activityLimit.allowed) {
+        ack?.({ ok: false, error: 'Slow down a bit', code: 'rate_limited' })
+        return
+      }
 
       const parsed = activitySchema.safeParse(payload)
-      if (!parsed.success) return
+      if (!parsed.success) {
+        ack?.({ ok: false, error: 'Invalid activity' })
+        return
+      }
 
       const room = await roomStore.getRoom(roomSession.code)
-      if (!room) return
+      if (!room) {
+        ack?.({ ok: false, error: 'Room not found' })
+        return
+      }
 
       const participant = room.participants.find((p) => p.id === roomSession!.participantId)
       const activity = await roomStore.addActivity(roomSession.code, {
@@ -116,6 +151,7 @@ export function createSocketServer(
       if (activity) {
         io.to(roomSession.code).emit('activity', activity)
       }
+      ack?.({ ok: true })
     })
 
     socket.on('system-activity', async (content: string) => {

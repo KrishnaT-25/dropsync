@@ -8,9 +8,16 @@ interface MessageInputProps {
   onSendClipboard: (content: string) => void
   onSendCode: (content: string) => void
   onSendFile: (file: File) => void
+  rateLimitHint?: string | null
 }
 
-export function MessageInput({ onSend, onSendClipboard, onSendCode, onSendFile }: MessageInputProps) {
+export function MessageInput({
+  onSend,
+  onSendClipboard,
+  onSendCode,
+  onSendFile,
+  rateLimitHint,
+}: MessageInputProps) {
   const [value, setValue] = useState('')
   const [mode, setMode] = useState<InputMode>('text')
   const [clipboardStatus, setClipboardStatus] = useState<string | null>(null)
@@ -86,6 +93,12 @@ export function MessageInput({ onSend, onSendClipboard, onSendCode, onSendFile }
         <div className="mb-2 rounded-xl border border-dashed border-accent bg-accent/10 px-4 py-3 text-center text-sm text-accent">
           Drop files to share
         </div>
+      )}
+
+      {rateLimitHint && (
+        <p className="mb-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+          {rateLimitHint}
+        </p>
       )}
 
       <div className="mb-2 flex items-center gap-2">

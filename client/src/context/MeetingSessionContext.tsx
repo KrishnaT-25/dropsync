@@ -27,6 +27,7 @@ interface MeetingSessionContextValue {
   connection: ConnectionStatus
   exitReason: MeetingExitReason
   activityLog: Array<{ actorId: string; actorName: string; content: string; id: string }>
+  rateLimitHint: string | null
   prepareAsHost: (code: string, participantId: string) => void
   joinAsGuest: (code: string, displayName: string) => Promise<{ ok: boolean; error?: string }>
   enterCall: (displayName: string) => Promise<{ ok: boolean; error?: string }>
@@ -91,6 +92,7 @@ export function MeetingSessionProvider({ children }: { children: ReactNode }) {
   const [activityLog, setActivityLog] = useState<
     Array<{ actorId: string; actorName: string; content: string; id: string }>
   >([])
+  const [rateLimitHint, setRateLimitHint] = useState<string | null>(null)
 
   const participantIdRef = useRef<string | null>(null)
   const isHostRef = useRef(false)
@@ -303,7 +305,12 @@ export function MeetingSessionProvider({ children }: { children: ReactNode }) {
   const emitActivity = useCallback(
     (content: string) => {
       if (!isJoined) return
-      meetingSocket.emitMeetingActivity(content)
+      void meetingSocket.emitMeetingActivity(content).then((ack) => {
+        if (ack?.code === 'rate_limited' || ack?.error === 'Slow down a bit') {
+          setRateLimitHint('Slow down a bit')
+          window.setTimeout(() => setRateLimitHint(null), 3000)
+        }
+      })
     },
     [isJoined],
   )
@@ -352,6 +359,7 @@ export function MeetingSessionProvider({ children }: { children: ReactNode }) {
       connection,
       exitReason,
       activityLog,
+      rateLimitHint,
       prepareAsHost,
       joinAsGuest,
       enterCall,
@@ -372,6 +380,7 @@ export function MeetingSessionProvider({ children }: { children: ReactNode }) {
       connection,
       exitReason,
       activityLog,
+      rateLimitHint,
       prepareAsHost,
       joinAsGuest,
       enterCall,

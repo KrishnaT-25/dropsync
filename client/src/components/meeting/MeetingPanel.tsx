@@ -8,7 +8,7 @@ import { VideoTile } from './VideoTile'
 
 export function MeetingPanel() {
   const { error, tiles, localVideoRef } = useMeeting()
-  const { meeting, isHost, activityLog, participantId } = useMeetingSession()
+  const { meeting, isHost, activityLog, participantId, rateLimitHint } = useMeetingSession()
   const [copied, setCopied] = useState(false)
 
   const inviteUrl = meeting ? `${window.location.origin}/meet/${meeting.code}` : ''
@@ -88,6 +88,11 @@ export function MeetingPanel() {
 
       <MeetingControls />
       {error && <p className="mt-3 text-center text-sm text-red-400">{error}</p>}
+      {rateLimitHint && (
+        <p className="mt-2 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+          {rateLimitHint}
+        </p>
+      )}
 
       {activityLog.length > 0 && (
         <ul className="mt-4 space-y-1 border-t pt-3" style={{ borderColor: 'var(--border)' }}>

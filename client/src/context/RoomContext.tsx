@@ -28,6 +28,7 @@ interface RoomContextValue {
   participantId: string | null
   connection: ConnectionStatus
   isLoading: boolean
+  rateLimitHint: string | null
   createRoom: (password?: string) => Promise<string>
   joinRoom: (code: string, displayName?: string, password?: string) => Promise<JoinRoomResult>
   leaveRoom: () => void
@@ -69,6 +70,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   const [participantId, setParticipantId] = useState<string | null>(null)
   const [connection, setConnection] = useState<ConnectionStatus>({ connected: false, error: null })
   const [isLoading, setIsLoading] = useState(false)
+  const [rateLimitHint, setRateLimitHint] = useState<string | null>(null)
 
   const participantIdRef = useRef<string | null>(null)
   const roomCodeRef = useRef<string | null>(null)
@@ -360,7 +362,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       if (!trimmed) return
 
       if (connection.connected) {
-        socket.emitActivity({
+        void socket.emitActivity({
           type,
           content: trimmed,
           fileMeta: fileMeta
@@ -370,6 +372,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
                 mimeType: fileMeta.mimeType,
               }
             : undefined,
+        }).then((ack) => {
+          if (ack?.code === 'rate_limited' || ack?.error === 'Slow down a bit') {
+            setRateLimitHint('Slow down a bit')
+            window.setTimeout(() => setRateLimitHint(null), 3000)
+          }
         })
 
         if (fileMeta?.objectUrl) {
@@ -441,18 +448,25 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       pendingFilesRef.current.set(transferId, file)
 
       if (connection.connected) {
-        socket.emitActivity({
-          type: 'file',
-          content: file.name,
-          fileMeta: {
-            fileName: file.name,
-            fileSize: file.size,
-            mimeType: file.type || 'application/octet-stream',
-            transferId,
-            progress: 0,
-            status: 'transferring',
-          },
-        })
+        void socket
+          .emitActivity({
+            type: 'file',
+            content: file.name,
+            fileMeta: {
+              fileName: file.name,
+              fileSize: file.size,
+              mimeType: file.type || 'application/octet-stream',
+              transferId,
+              progress: 0,
+              status: 'transferring',
+            },
+          })
+          .then((ack) => {
+            if (ack?.code === 'rate_limited' || ack?.error === 'Slow down a bit') {
+              setRateLimitHint('Slow down a bit')
+              window.setTimeout(() => setRateLimitHint(null), 3000)
+            }
+          })
         return
       }
 
@@ -496,6 +510,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       participantId,
       connection,
       isLoading,
+      rateLimitHint,
       createRoom,
       joinRoom,
       leaveRoom,
@@ -510,6 +525,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       participantId,
       connection,
       isLoading,
+      rateLimitHint,
       createRoom,
       joinRoom,
       leaveRoom,

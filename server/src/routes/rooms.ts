@@ -1,6 +1,11 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
 import { z } from 'zod'
+import {
+  RATE_LIMITS,
+  checkRateLimit,
+  clientIpFromRequest,
+} from '../services/rateLimit.js'
 import { roomStore } from '../store/roomStore.js'
 import { toPublicRoom } from '../utils/publicRoom.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
@@ -15,6 +20,17 @@ const createSchema = z.object({
 
 roomsRouter.post('/', async (req, res, next) => {
   try {
+    const ip = clientIpFromRequest(req)
+    const createLimit = await checkRateLimit(
+      `create-room:${ip}`,
+      RATE_LIMITS.createIp.max,
+      RATE_LIMITS.createIp.windowMs,
+    )
+    if (!createLimit.allowed) {
+      res.status(429).json({ error: 'Slow down a bit', code: 'rate_limited' })
+      return
+    }
+
     const parsed = createSchema.safeParse(req.body ?? {})
     if (!parsed.success) {
       res.status(400).json({ error: 'Invalid request body' })
@@ -67,6 +83,17 @@ const joinSchema = z.object({
 
 roomsRouter.post('/:code/join', async (req, res, next) => {
   try {
+    const ip = clientIpFromRequest(req)
+    const joinLimit = await checkRateLimit(
+      `join-room-http:${ip}`,
+      RATE_LIMITS.joinIp.max,
+      RATE_LIMITS.joinIp.windowMs,
+    )
+    if (!joinLimit.allowed) {
+      res.status(429).json({ error: 'Slow down a bit', code: 'rate_limited' })
+      return
+    }
+
     const code = normalizeRoomCode(req.params.code)
     if (!isValidRoomCode(code)) {
       res.status(400).json({ error: 'Invalid room code' })

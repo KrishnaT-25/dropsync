@@ -62,8 +62,18 @@ export function joinRoomSocket(
   })
 }
 
-export function emitActivity(payload: ActivityPayload) {
-  getSocket().emit('activity', payload)
+export interface ActivityAck {
+  ok: boolean
+  error?: string
+  code?: string
+}
+
+export function emitActivity(payload: ActivityPayload): Promise<ActivityAck> {
+  return new Promise((resolve) => {
+    getSocket().emit('activity', payload, (ack: ActivityAck) => {
+      resolve(ack ?? { ok: true })
+    })
+  })
 }
 
 export function emitSystemActivity(content: string) {
