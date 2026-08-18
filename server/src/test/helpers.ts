@@ -22,10 +22,11 @@ export async function startTestServer(): Promise<TestHarness> {
   refCount += 1
   if (harness) return harness
 
-  const { redisPub, redisSub } = await connectRedis()
+  // Avoid Socket.IO Redis adapter in tests — room/meeting state still uses Redis via stores.
   const app = createApp()
   const httpServer = createServer(app)
-  const io = createSocketServer(httpServer, { redisPub, redisSub })
+  await connectRedis()
+  const io = createSocketServer(httpServer)
 
   await new Promise<void>((resolve) => {
     httpServer.listen(0, '127.0.0.1', () => resolve())

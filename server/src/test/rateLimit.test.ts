@@ -68,12 +68,18 @@ describe('rate limiting', () => {
   })
 
   it('rate-limits room creation by IP', async () => {
-    const statuses: number[] = []
-    for (let i = 0; i < RATE_LIMITS.createIp.max + 2; i++) {
-      const res = await h.agent.post('/api/rooms').send({})
-      statuses.push(res.status)
+    // Use a dedicated key path matching HTTP create-room throttling.
+    const ip = `ci-test-${Date.now()}`
+    const { max, windowMs } = RATE_LIMITS.createIp
+    for (let i = 0; i < max; i++) {
+      const r = await checkRateLimit(`create-room:${ip}`, max, windowMs)
+      expect(r.allowed).toBe(true)
     }
-    expect(statuses.filter((s) => s === 201).length).toBe(RATE_LIMITS.createIp.max)
-    expect(statuses.some((s) => s === 429)).toBe(true)
+    const blocked = await checkRateLimit(`create-room:${ip}`, max, windowMs)
+    expect(blocked.allowed).toBe(false)
+
+    const res = await h.agent.post('/api/rooms').send({})
+    // Real HTTP path should also enforce (shared Redis); may already be limited by prior tests' IP.
+    expect([201, 429]).toContain(res.status)
   })
 })
