@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { getMemoryTransfer, storeFallbackFile } from '../services/fallbackStorage.js'
+import { getFallbackTransfer, storeFallbackFile } from '../services/fallbackStorage.js'
 import { getTransferStats, recordTransfer, type TransferPath } from '../services/transferStats.js'
 
 export const transfersRouter = Router()
@@ -35,7 +35,13 @@ transfersRouter.post('/upload', async (req, res, next) => {
       return
     }
 
-    const fileName = String(req.header('x-file-name') ?? 'file.bin')
+    const rawName = String(req.header('x-file-name') ?? 'file.bin')
+    let fileName = rawName
+    try {
+      fileName = decodeURIComponent(rawName)
+    } catch {
+      // keep raw
+    }
     const mimeType = String(req.header('x-mime-type') ?? 'application/octet-stream')
 
     const stored = await storeFallbackFile({ buffer, fileName, mimeType })
@@ -44,7 +50,8 @@ transfersRouter.post('/upload', async (req, res, next) => {
     const forwardedProto = String(req.get('x-forwarded-proto') ?? '')
       .split(',')[0]
       ?.trim()
-    const protocol = forwardedProto === 'https' || forwardedProto === 'http' ? forwardedProto : req.protocol
+    const protocol =
+      forwardedProto === 'https' || forwardedProto === 'http' ? forwardedProto : req.protocol
     const downloadUrl = stored.downloadUrl.startsWith('http')
       ? stored.downloadUrl
       : `${protocol}://${req.get('host')}${stored.downloadUrl}`
@@ -59,17 +66,21 @@ transfersRouter.post('/upload', async (req, res, next) => {
   }
 })
 
-transfersRouter.get('/:transferId/download', (req, res) => {
-  const obj = getMemoryTransfer(req.params.transferId)
-  if (!obj) {
-    res.status(404).json({ error: 'Transfer not found or expired' })
-    return
-  }
+transfersRouter.get('/:transferId/download', async (req, res, next) => {
+  try {
+    const obj = await getFallbackTransfer(req.params.transferId)
+    if (!obj) {
+      res.status(404).json({ error: 'Transfer not found or expired' })
+      return
+    }
 
-  res.setHeader('Content-Type', obj.mimeType)
-  res.setHeader(
-    'Content-Disposition',
-    `attachment; filename*=UTF-8''${encodeURIComponent(obj.fileName)}`,
-  )
-  res.send(obj.buffer)
+    res.setHeader('Content-Type', obj.mimeType)
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(obj.fileName)}`,
+    )
+    res.send(obj.buffer)
+  } catch (err) {
+    next(err)
+  }
 })

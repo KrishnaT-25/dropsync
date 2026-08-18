@@ -163,13 +163,9 @@ export function createSocketServer(
       if (!parsed.success) return
       if (parsed.data.senderParticipantId !== session.participantId) return
 
-      const room = await roomStore.getRoom(session.code)
-      if (!room) return
-
-      const target = room.participants.find((p) => p.id === parsed.data.targetParticipantId)
-      if (!target?.socketId) return
-
-      io.to(target.socketId).emit(event, parsed.data)
+      // Broadcast to the room; clients ignore messages not addressed to them.
+      // More reliable than targeting a stored socketId across reconnects.
+      socket.to(session.code).emit(event, parsed.data)
     }
 
     socket.on('file-offer', (payload) => {

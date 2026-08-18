@@ -3,7 +3,7 @@ import { getIceServers, recordTransferStat, uploadFallbackFile } from './api'
 
 const CHUNK_SIZE = 16 * 1024
 const BUFFER_LOW = 256 * 1024
-const CONNECT_TIMEOUT_MS = 20_000
+const CONNECT_TIMEOUT_MS = 8_000
 
 export type TransferPath = 'direct' | 'relay' | 'storage'
 export type TransferStatus = 'pending' | 'transferring' | 'complete' | 'failed'
@@ -100,12 +100,15 @@ export class FileTransferManager {
     this.socket.off('file-ice-candidate')
 
     this.socket.on('file-offer', (msg: FileSignalMessage) => {
+      if (msg.targetParticipantId !== this.selfId) return
       void this.handleOffer(msg)
     })
     this.socket.on('file-answer', (msg: FileSignalMessage) => {
+      if (msg.targetParticipantId !== this.selfId) return
       void this.handleAnswer(msg)
     })
     this.socket.on('file-ice-candidate', (msg: FileSignalMessage) => {
+      if (msg.targetParticipantId !== this.selfId) return
       void this.handleRemoteCandidate(msg)
     })
   }
@@ -133,21 +136,7 @@ export class FileTransferManager {
     activityId: string
     recipientIds: string[]
   }): Promise<void> {
-    await this.refreshIceServers()
     const { file, transferId, activityId, recipientIds } = opts
-
-    if (recipientIds.length === 0) {
-      const objectUrl = URL.createObjectURL(file)
-      this.onProgress?.({
-        transferId,
-        activityId,
-        progress: 1,
-        status: 'complete',
-        transferPath: 'direct',
-        objectUrl,
-      })
-      return
-    }
 
     this.onProgress?.({
       transferId,
@@ -156,27 +145,8 @@ export class FileTransferManager {
       status: 'transferring',
     })
 
-    const results = await Promise.all(
-      recipientIds.map((peerId) => this.sendToPeer({ file, transferId, activityId, peerId })),
-    )
-
-    const anyOk = results.some((r) => r.ok)
-    if (anyOk) {
-      const usedRelay = results.some((r) => r.ok && r.path === 'relay')
-      const path: TransferPath = usedRelay ? 'relay' : 'direct'
-      void recordTransferStat(path)
-      this.onProgress?.({
-        transferId,
-        activityId,
-        progress: 1,
-        status: 'complete',
-        transferPath: path,
-        objectUrl: URL.createObjectURL(file),
-      })
-      return
-    }
-
-    // Fallback: upload once, broadcast download URL via socket
+    // Always upload to the server first so transfers work without TURN and across
+    // multi-instance deploys. P2P remains a best-effort acceleration afterward.
     try {
       const uploaded = await uploadFallbackFile(file)
       void recordTransferStat('storage')
@@ -196,6 +166,40 @@ export class FileTransferManager {
         downloadUrl: uploaded.downloadUrl,
       })
     } catch (err) {
+      // If upload fails and there are no peers, still expose a local object URL.
+      if (recipientIds.length === 0) {
+        this.onProgress?.({
+          transferId,
+          activityId,
+          progress: 1,
+          status: 'complete',
+          transferPath: 'direct',
+          objectUrl: URL.createObjectURL(file),
+        })
+        return
+      }
+
+      // Last resort: try direct P2P when storage is unavailable.
+      await this.refreshIceServers()
+      const results = await Promise.all(
+        recipientIds.map((peerId) => this.sendToPeer({ file, transferId, activityId, peerId })),
+      )
+      const anyOk = results.some((r) => r.ok)
+      if (anyOk) {
+        const usedRelay = results.some((r) => r.ok && r.path === 'relay')
+        const path: TransferPath = usedRelay ? 'relay' : 'direct'
+        void recordTransferStat(path)
+        this.onProgress?.({
+          transferId,
+          activityId,
+          progress: 1,
+          status: 'complete',
+          transferPath: path,
+          objectUrl: URL.createObjectURL(file),
+        })
+        return
+      }
+
       this.onProgress?.({
         transferId,
         activityId,

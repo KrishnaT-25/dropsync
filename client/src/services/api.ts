@@ -94,7 +94,7 @@ export async function uploadFallbackFile(
     method: 'POST',
     headers: {
       'Content-Type': file.type || 'application/octet-stream',
-      'x-file-name': file.name,
+      'x-file-name': encodeURIComponent(file.name),
       'x-mime-type': file.type || 'application/octet-stream',
     },
     body: file,

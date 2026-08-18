@@ -10,5 +10,6 @@ export function toPublicRoom(room: RoomRecord): PublicRoomRecord {
   return {
     ...rest,
     hasPassword: Boolean(passwordHash),
+    participants: rest.participants.map(({ socketId: _socketId, ...participant }) => participant),
   }
 }
