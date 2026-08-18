@@ -52,6 +52,7 @@ export interface ApiRoomRecord {
   participants: Array<Omit<Participant, 'isYou'>>
   activities: Array<Omit<ActivityItem, 'timestamp'> & { timestamp: string }>
   meetingActive: boolean
+  hasPassword?: boolean
 }
 
 export interface CreateRoomResponse {
@@ -63,6 +64,12 @@ export interface JoinRoomResponse {
   room: ApiRoomRecord
   participantId: string
 }
+
+export type JoinRoomErrorCode = 'password_required' | 'incorrect_password'
+
+export type JoinRoomResult =
+  | { ok: true }
+  | { ok: false; error: JoinRoomErrorCode | 'failed' }
 
 export interface ConnectionStatus {
   connected: boolean

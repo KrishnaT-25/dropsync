@@ -1,23 +1,56 @@
-import { ArrowRight, Loader2 } from 'lucide-react'
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { ArrowRight, Loader2, Lock } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useRoom } from '../../context/RoomContext'
 import { isValidRoomCode, normalizeRoomCode } from '../../utils/roomCode'
 
 type Tab = 'create' | 'join'
 
+function formatJoinCode(value: string): string {
+  const cleaned = normalizeRoomCode(value)
+  if (cleaned.length <= 3) return cleaned
+  return `${cleaned.slice(0, 3)}-${cleaned.slice(3)}`
+}
+
 export function RoomTabs() {
   const [tab, setTab] = useState<Tab>('create')
   const [joinCode, setJoinCode] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [createPassword, setCreatePassword] = useState('')
+  const [showCreatePassword, setShowCreatePassword] = useState(false)
+  const [joinPassword, setJoinPassword] = useState('')
+  const [showJoinPassword, setShowJoinPassword] = useState(false)
   const [error, setError] = useState('')
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { createRoom, joinRoom, isLoading } = useRoom()
 
+  useEffect(() => {
+    const presetCode = searchParams.get('joinCode') ?? searchParams.get('join')
+    const needPassword = searchParams.get('needPassword') === '1'
+    if (presetCode && isValidRoomCode(presetCode)) {
+      setTab('join')
+      setJoinCode(formatJoinCode(presetCode))
+      if (needPassword) {
+        setShowJoinPassword(true)
+        setError('This room requires a password')
+      }
+    }
+  }, [searchParams])
+
   const handleCreate = async () => {
     setError('')
+    if (showCreatePassword && createPassword.trim().length > 0 && createPassword.trim().length < 4) {
+      setError('Password must be at least 4 characters')
+      return
+    }
+
     try {
-      const code = await createRoom()
+      const password =
+        showCreatePassword && createPassword.trim().length > 0
+          ? createPassword.trim()
+          : undefined
+      const code = await createRoom(password)
       navigate(`/room/${code}`)
     } catch {
       setError('Could not create room. Is the server running?')
@@ -34,22 +67,37 @@ export function RoomTabs() {
     }
 
     const normalized = normalizeRoomCode(joinCode)
-    const success = await joinRoom(normalized, displayName.trim() || 'Guest')
-    if (success) {
+    const result = await joinRoom(
+      normalized,
+      displayName.trim() || 'Guest',
+      showJoinPassword ? joinPassword : undefined,
+    )
+
+    if (result.ok) {
       navigate(`/room/${normalized}`)
-    } else {
-      setError('Could not join room. Check the code or try again.')
+      return
     }
+
+    if (result.error === 'password_required') {
+      setShowJoinPassword(true)
+      setError('This room requires a password')
+      return
+    }
+
+    if (result.error === 'incorrect_password') {
+      setShowJoinPassword(true)
+      setError('Incorrect password. Try again.')
+      return
+    }
+
+    setError('Could not join room. Check the code or try again.')
   }
 
   const handleCodeChange = (value: string) => {
-    const cleaned = normalizeRoomCode(value)
-    if (cleaned.length <= 3) {
-      setJoinCode(cleaned)
-    } else {
-      setJoinCode(`${cleaned.slice(0, 3)}-${cleaned.slice(3)}`)
-    }
+    setJoinCode(formatJoinCode(value))
     setError('')
+    setShowJoinPassword(false)
+    setJoinPassword('')
   }
 
   return (
@@ -85,10 +133,60 @@ export function RoomTabs() {
 
       <div className="p-5 sm:p-7">
         {tab === 'create' ? (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <p className="text-sm leading-relaxed sm:text-[15px]" style={{ color: 'var(--text-secondary)' }}>
               You&apos;ll get a room code and QR others can join with. Start a video meeting inside the room anytime.
             </p>
+
+            {!showCreatePassword ? (
+              <button
+                type="button"
+                onClick={() => setShowCreatePassword(true)}
+                className="flex items-center gap-1.5 text-xs font-medium text-accent hover:underline"
+              >
+                <Lock className="h-3.5 w-3.5" />
+                Add optional password
+              </button>
+            ) : (
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label className="block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                    Room password (optional)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreatePassword(false)
+                      setCreatePassword('')
+                    }}
+                    className="text-xs hover:underline"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    Remove
+                  </button>
+                </div>
+                <input
+                  type="password"
+                  value={createPassword}
+                  onChange={(e) => {
+                    setCreatePassword(e.target.value)
+                    setError('')
+                  }}
+                  placeholder="Min. 4 characters"
+                  maxLength={64}
+                  autoComplete="new-password"
+                  className="w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:border-accent"
+                  style={{
+                    background: 'var(--input-bg)',
+                    borderColor: 'var(--border-strong)',
+                    color: 'var(--text-primary)',
+                  }}
+                />
+              </div>
+            )}
+
+            {error && tab === 'create' && <p className="text-sm text-red-400">{error}</p>}
+
             <button
               type="button"
               onClick={() => {
@@ -149,6 +247,33 @@ export function RoomTabs() {
                   color: 'var(--text-primary)',
                 }}
               />
+
+              {showJoinPassword && (
+                <div className="mt-3">
+                  <label className="mb-1.5 block text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                    Room password
+                  </label>
+                  <input
+                    type="password"
+                    value={joinPassword}
+                    onChange={(e) => {
+                      setJoinPassword(e.target.value)
+                      setError('')
+                    }}
+                    placeholder="Enter room password"
+                    maxLength={64}
+                    autoComplete="current-password"
+                    autoFocus
+                    className="w-full rounded-xl border px-4 py-3 text-sm outline-none transition focus:border-accent"
+                    style={{
+                      background: 'var(--input-bg)',
+                      borderColor: error ? '#f87171' : 'var(--border-strong)',
+                      color: 'var(--text-primary)',
+                    }}
+                  />
+                </div>
+              )}
+
               {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
             </div>
 

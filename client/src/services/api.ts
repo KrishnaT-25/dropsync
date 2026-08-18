@@ -2,6 +2,18 @@ import type { ApiRoomRecord, CreateRoomResponse, JoinRoomResponse } from '../typ
 
 const API_BASE = import.meta.env.VITE_API_URL ?? ''
 
+export class ApiRequestError extends Error {
+  readonly code: string
+  readonly status: number
+
+  constructor(code: string, status: number) {
+    super(code)
+    this.name = 'ApiRequestError'
+    this.code = code
+    this.status = status
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: {
@@ -13,20 +25,32 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `Request failed (${response.status})`)
+    throw new ApiRequestError(body?.error ?? `request_failed_${response.status}`, response.status)
   }
 
   return response.json() as Promise<T>
 }
 
-export function createRoom(): Promise<CreateRoomResponse> {
-  return request<CreateRoomResponse>('/api/rooms', { method: 'POST' })
+export function createRoom(password?: string): Promise<CreateRoomResponse> {
+  const body =
+    password && password.trim().length > 0 ? { password: password.trim() } : {}
+  return request<CreateRoomResponse>('/api/rooms', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
-export function joinRoom(code: string, displayName?: string): Promise<JoinRoomResponse> {
+export function joinRoom(
+  code: string,
+  displayName?: string,
+  password?: string,
+): Promise<JoinRoomResponse> {
   return request<JoinRoomResponse>(`/api/rooms/${code}/join`, {
     method: 'POST',
-    body: JSON.stringify({ displayName }),
+    body: JSON.stringify({
+      displayName,
+      ...(password !== undefined ? { password } : {}),
+    }),
   })
 }
 

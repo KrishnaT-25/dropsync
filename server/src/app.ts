@@ -23,5 +23,17 @@ export function createApp() {
     res.status(404).json({ error: 'Not found' })
   })
 
+  app.use(
+    (
+      err: unknown,
+      _req: express.Request,
+      res: express.Response,
+      _next: express.NextFunction,
+    ) => {
+      console.error(err)
+      res.status(500).json({ error: 'Internal server error' })
+    },
+  )
+
   return app
 }

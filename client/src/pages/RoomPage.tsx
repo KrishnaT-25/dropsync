@@ -45,6 +45,7 @@ function RoomContent() {
   const navigate = useNavigate()
   const {
     room,
+    participantId,
     leaveRoom,
     sendMessage,
     sendClipboard,
@@ -138,7 +139,7 @@ function RoomContent() {
           }}
         >
           <MeetingPanel />
-          <ActivityFeed activities={room.activities} />
+          <ActivityFeed activities={room.activities} selfParticipantId={participantId} />
           <MessageInput
             onSend={sendMessage}
             onSendClipboard={sendClipboard}

@@ -20,14 +20,19 @@ export function HomePage() {
 
   useEffect(() => {
     const joinCode = searchParams.get('join')
-    if (joinCode && isValidRoomCode(joinCode)) {
-      const normalized = normalizeRoomCode(joinCode)
-      void joinRoom(normalized).then((success) => {
-        if (success) {
-          navigate(`/room/${normalized}`, { replace: true })
-        }
-      })
-    }
+    if (!joinCode || !isValidRoomCode(joinCode)) return
+    if (searchParams.get('needPassword') === '1') return
+
+    const normalized = normalizeRoomCode(joinCode)
+    void joinRoom(normalized).then((result) => {
+      if (result.ok) {
+        navigate(`/room/${normalized}`, { replace: true })
+        return
+      }
+      if (result.error === 'password_required') {
+        navigate(`/?joinCode=${normalized}&needPassword=1`, { replace: true })
+      }
+    })
   }, [searchParams, joinRoom, navigate])
 
   return (

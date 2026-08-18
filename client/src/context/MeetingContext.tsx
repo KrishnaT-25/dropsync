@@ -109,7 +109,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       if (participantId) {
         updateParticipantMeetingState(participantId, { inMeeting: true, isMuted: false, isCameraOff: false })
       }
-      addSystemActivity('You started a meeting')
+      addSystemActivity('started a meeting')
     } catch {
       setError('Camera or microphone access was denied. Check browser permissions.')
     }
@@ -117,7 +117,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
 
   const endMeeting = useCallback(() => {
     cleanup()
-    addSystemActivity('You left the meeting')
+    addSystemActivity('left the meeting')
   }, [addSystemActivity, cleanup])
 
   const toggleMute = useCallback(() => {
@@ -151,7 +151,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       if (participantId) {
         updateParticipantMeetingState(participantId, { isScreenSharing: false })
       }
-      addSystemActivity('You stopped sharing your screen')
+      addSystemActivity('stopped screen sharing')
       return
     }
 
@@ -167,7 +167,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       if (participantId) {
         updateParticipantMeetingState(participantId, { isScreenSharing: true })
       }
-      addSystemActivity('You started sharing your screen')
+      addSystemActivity('started screen sharing')
 
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         stopStream(screenStreamRef.current)
@@ -177,7 +177,7 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
         if (participantId) {
           updateParticipantMeetingState(participantId, { isScreenSharing: false })
         }
-        addSystemActivity('You stopped sharing your screen')
+        addSystemActivity('stopped screen sharing')
       })
     } catch {
       setError('Screen sharing was cancelled or blocked.')

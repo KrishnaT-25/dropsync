@@ -31,14 +31,29 @@ export interface RoomRecord {
   participants: Participant[]
   activities: ActivityItem[]
   meetingActive: boolean
+  /** bcrypt hash — never expose to clients */
+  passwordHash?: string
+}
+
+/** Room payload sent over REST/Socket (no password hash). */
+export interface PublicRoomRecord {
+  code: string
+  createdAt: string
+  expiresAt: string
+  participants: Participant[]
+  activities: ActivityItem[]
+  meetingActive: boolean
+  hasPassword: boolean
 }
 
 export interface CreateRoomResponse {
-  room: RoomRecord
+  room: PublicRoomRecord
   participantId: string
 }
 
 export interface JoinRoomResponse {
-  room: RoomRecord
+  room: PublicRoomRecord
   participantId: string
 }
+
+export type JoinRoomErrorCode = 'password_required' | 'incorrect_password'

@@ -1,9 +1,12 @@
 import type { Server as HttpServer } from 'node:http'
+import type { Redis } from 'ioredis'
+import { createAdapter } from '@socket.io/redis-adapter'
 import { Server } from 'socket.io'
 import { z } from 'zod'
 import { config } from '../config.js'
 import { roomStore } from '../store/roomStore.js'
 import type { ActivityItem } from '../types.js'
+import { toPublicRoom } from '../utils/publicRoom.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
 
 const joinSchema = z.object({
@@ -35,7 +38,10 @@ interface SocketSession {
   participantId: string
 }
 
-export function createSocketServer(httpServer: HttpServer) {
+export function createSocketServer(
+  httpServer: HttpServer,
+  redisClients?: { redisPub: Redis; redisSub: Redis },
+) {
   const io = new Server(httpServer, {
     cors: {
       origin: config.clientOrigin,
@@ -43,15 +49,21 @@ export function createSocketServer(httpServer: HttpServer) {
     },
   })
 
+  if (redisClients) {
+    io.adapter(createAdapter(redisClients.redisPub, redisClients.redisSub))
+  }
+
   roomStore.setOnExpire((code) => {
     io.to(code).emit('room-expired')
-    io.in(code).socketsLeave(code)
+    void io.in(code).socketsLeave(code)
   })
+
+  roomStore.startExpiryPoller()
 
   io.on('connection', (socket) => {
     let session: SocketSession | null = null
 
-    socket.on('join-room', (payload, ack) => {
+    socket.on('join-room', async (payload, ack) => {
       const parsed = joinSchema.safeParse(payload)
       if (!parsed.success) {
         ack?.({ ok: false, error: 'Invalid join payload' })
@@ -64,35 +76,30 @@ export function createSocketServer(httpServer: HttpServer) {
         return
       }
 
-      const room = roomStore.bindSocket(code, parsed.data.participantId, socket.id)
+      const room = await roomStore.bindSocket(code, parsed.data.participantId, socket.id)
       if (!room) {
         ack?.({ ok: false, error: 'Room not found or participant invalid' })
         return
       }
 
       session = { code, participantId: parsed.data.participantId }
-      socket.join(code)
+      await socket.join(code)
 
-      const participant = room.participants.find((p) => p.id === parsed.data.participantId)
-      if (participant && !room.activities.some((a) => a.content.includes('connected'))) {
-        // no-op for first connect
-      }
-
-      ack?.({ ok: true, room })
-      socket.to(code).emit('room-state', room)
+      ack?.({ ok: true, room: toPublicRoom(room) })
+      socket.to(code).emit('room-state', toPublicRoom(room))
     })
 
-    socket.on('activity', (payload) => {
+    socket.on('activity', async (payload) => {
       if (!session) return
 
       const parsed = activitySchema.safeParse(payload)
       if (!parsed.success) return
 
-      const room = roomStore.getRoom(session.code)
+      const room = await roomStore.getRoom(session.code)
       if (!room) return
 
       const participant = room.participants.find((p) => p.id === session!.participantId)
-      const activity = roomStore.addActivity(session.code, {
+      const activity = await roomStore.addActivity(session.code, {
         type: parsed.data.type,
         content: parsed.data.content,
         sender: participant?.name ?? 'Guest',
@@ -105,26 +112,26 @@ export function createSocketServer(httpServer: HttpServer) {
       }
     })
 
-    socket.on('meeting-state', (payload) => {
+    socket.on('meeting-state', async (payload) => {
       if (!session) return
 
       const parsed = meetingStateSchema.safeParse(payload)
       if (!parsed.success) return
 
-      const room = roomStore.updateMeetingState(session.code, session.participantId, parsed.data)
+      const room = await roomStore.updateMeetingState(session.code, session.participantId, parsed.data)
       if (room) {
-        io.to(session.code).emit('room-state', room)
+        io.to(session.code).emit('room-state', toPublicRoom(room))
       }
     })
 
-    socket.on('system-activity', (content: string) => {
+    socket.on('system-activity', async (content: string) => {
       if (!session || typeof content !== 'string' || !content.trim()) return
 
-      const room = roomStore.getRoom(session.code)
+      const room = await roomStore.getRoom(session.code)
       if (!room) return
 
       const participant = room.participants.find((p) => p.id === session!.participantId)
-      const activity = roomStore.addActivity(session.code, {
+      const activity = await roomStore.addActivity(session.code, {
         type: 'meeting',
         content: content.trim(),
         sender: participant?.name ?? 'Guest',
@@ -136,26 +143,26 @@ export function createSocketServer(httpServer: HttpServer) {
       }
     })
 
-    socket.on('leave-room', () => {
+    socket.on('leave-room', async () => {
       if (!session) return
 
       const { code, participantId } = session
-      roomStore.unbindSocket(code, participantId)
-      socket.leave(code)
-      const room = roomStore.getRoom(code)
+      await roomStore.unbindSocket(code, participantId)
+      await socket.leave(code)
+      const room = await roomStore.getRoom(code)
       if (room) {
-        io.to(code).emit('room-state', room)
+        io.to(code).emit('room-state', toPublicRoom(room))
       }
       session = null
     })
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       if (!session) return
 
       const { code, participantId } = session
-      const room = roomStore.removeParticipant(code, participantId)
+      const room = await roomStore.removeParticipant(code, participantId)
       if (room) {
-        io.to(code).emit('room-state', room)
+        io.to(code).emit('room-state', toPublicRoom(room))
       } else {
         io.to(code).emit('room-expired')
       }

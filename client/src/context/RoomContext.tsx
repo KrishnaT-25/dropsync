@@ -9,8 +9,9 @@ import {
   type ReactNode,
 } from 'react'
 import * as api from '../services/api'
+import { ApiRequestError } from '../services/api'
 import * as socket from '../services/socket'
-import type { ActivityItem, ConnectionStatus, Participant, RoomState } from '../types'
+import type { ActivityItem, ConnectionStatus, JoinRoomResult, Participant, RoomState } from '../types'
 import { applyRoomState, mapApiRoom, mergeActivity } from '../utils/roomMapper'
 
 const STORAGE_KEY = 'dropsync-session'
@@ -26,8 +27,8 @@ interface RoomContextValue {
   participantId: string | null
   connection: ConnectionStatus
   isLoading: boolean
-  createRoom: () => Promise<string>
-  joinRoom: (code: string, displayName?: string) => Promise<boolean>
+  createRoom: (password?: string) => Promise<string>
+  joinRoom: (code: string, displayName?: string, password?: string) => Promise<JoinRoomResult>
   leaveRoom: () => void
   sendMessage: (content: string) => void
   sendClipboard: (content: string) => void
@@ -160,11 +161,11 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const createRoom = useCallback(async () => {
+  const createRoom = useCallback(async (password?: string) => {
     setIsLoading(true)
     setConnection({ connected: false, error: null })
     try {
-      const { room: apiRoom, participantId: pid } = await api.createRoom()
+      const { room: apiRoom, participantId: pid } = await api.createRoom(password)
       const mapped = mapApiRoom(apiRoom, pid)
       await connectToRoom(apiRoom.code, pid, mapped)
       return apiRoom.code
@@ -180,24 +181,33 @@ export function RoomProvider({ children }: { children: ReactNode }) {
   }, [connectToRoom])
 
   const joinRoom = useCallback(
-    async (code: string, displayName = 'Guest') => {
+    async (code: string, displayName = 'Guest', password?: string): Promise<JoinRoomResult> => {
       setIsLoading(true)
       setConnection({ connected: false, error: null })
       try {
         const normalized = code.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
-        const { room: apiRoom, participantId: pid } = await api.joinRoom(normalized, displayName)
+        const { room: apiRoom, participantId: pid } = await api.joinRoom(
+          normalized,
+          displayName,
+          password,
+        )
         const mapped = mapApiRoom(apiRoom, pid)
         mapped.participants = mapped.participants.map((p) =>
           p.id === pid ? { ...p, name: displayName, isYou: true } : p,
         )
         await connectToRoom(normalized, pid, mapped)
-        return true
+        return { ok: true }
       } catch (error) {
+        if (error instanceof ApiRequestError) {
+          if (error.code === 'password_required' || error.code === 'incorrect_password') {
+            return { ok: false, error: error.code }
+          }
+        }
         setConnection({
           connected: false,
           error: error instanceof Error ? error.message : 'Failed to join room',
         })
-        return false
+        return { ok: false, error: 'failed' }
       } finally {
         setIsLoading(false)
       }
@@ -352,13 +362,14 @@ export function RoomProvider({ children }: { children: ReactNode }) {
               type: 'meeting',
               content,
               sender: 'You',
+              senderId: participantId ?? undefined,
               timestamp: new Date(),
             },
           ],
         }
       })
     },
-    [connection.connected],
+    [connection.connected, participantId],
   )
 
   const updateParticipantMeetingState = useCallback(

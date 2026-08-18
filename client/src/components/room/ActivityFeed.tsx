@@ -6,6 +6,26 @@ import { formatTime } from '../../utils/formatTime'
 
 interface ActivityFeedProps {
   activities: ActivityItem[]
+  selfParticipantId?: string | null
+}
+
+function actorLabel(item: ActivityItem, selfParticipantId?: string | null): string {
+  if (selfParticipantId && item.senderId === selfParticipantId) return 'You'
+  if (item.sender && item.sender !== 'You') return item.sender
+  return 'Host'
+}
+
+function formatMeetingContent(item: ActivityItem, selfParticipantId?: string | null): string {
+  let action = item.content.trim()
+  if (action.startsWith('You ')) {
+    action = action.slice(4)
+  }
+
+  if (!item.senderId && !item.sender) {
+    return item.content
+  }
+
+  return `${actorLabel(item, selfParticipantId)} ${action}`
 }
 
 function FileRow({ item }: { item: ActivityItem }) {
@@ -75,12 +95,28 @@ function FileRow({ item }: { item: ActivityItem }) {
   )
 }
 
-function ActivityRow({ item }: { item: ActivityItem }) {
-  if (item.type === 'system' || item.type === 'meeting') {
+function ActivityRow({
+  item,
+  selfParticipantId,
+}: {
+  item: ActivityItem
+  selfParticipantId?: string | null
+}) {
+  if (item.type === 'system') {
     return (
       <div className="py-2 text-center">
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
           {item.content}
+        </p>
+      </div>
+    )
+  }
+
+  if (item.type === 'meeting') {
+    return (
+      <div className="py-2 text-center">
+        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+          {formatMeetingContent(item, selfParticipantId)}
         </p>
       </div>
     )
@@ -174,7 +210,7 @@ function ActivityRow({ item }: { item: ActivityItem }) {
   )
 }
 
-export function ActivityFeed({ activities }: ActivityFeedProps) {
+export function ActivityFeed({ activities, selfParticipantId }: ActivityFeedProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -198,7 +234,9 @@ export function ActivityFeed({ activities }: ActivityFeedProps) {
             </p>
           </div>
         ) : (
-          activities.map((item) => <ActivityRow key={item.id} item={item} />)
+          activities.map((item) => (
+            <ActivityRow key={item.id} item={item} selfParticipantId={selfParticipantId} />
+          ))
         )}
         <div ref={bottomRef} />
       </div>
