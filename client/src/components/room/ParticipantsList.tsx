@@ -1,17 +1,12 @@
-import { LogOut, MicOff, MonitorUp, Users, VideoOff } from 'lucide-react'
+import { LogOut, Users } from 'lucide-react'
 import type { Participant } from '../../types'
 
 interface ParticipantsListProps {
   participants: Participant[]
-  meetingActive?: boolean
   onLeave: () => void
 }
 
-export function ParticipantsList({
-  participants,
-  meetingActive = false,
-  onLeave,
-}: ParticipantsListProps) {
+export function ParticipantsList({ participants, onLeave }: ParticipantsListProps) {
   return (
     <div>
       <div
@@ -30,32 +25,14 @@ export function ParticipantsList({
             style={{ color: 'var(--ticket-text)' }}
           >
             <div className="flex min-w-0 items-center gap-2">
-              <span
-                className={`h-2 w-2 shrink-0 rounded-full ${
-                  participant.inMeeting ? 'bg-red-500' : 'bg-accent'
-                }`}
-              />
+              <span className="h-2 w-2 shrink-0 rounded-full bg-accent" />
               <span className="truncate">
                 {participant.isYou ? 'You' : participant.name === 'You' ? 'Host' : participant.name}
               </span>
             </div>
-
-            {meetingActive && participant.inMeeting && (
-              <div className="flex shrink-0 items-center gap-1">
-                {participant.isMuted && <MicOff className="h-3.5 w-3.5 text-red-500" />}
-                {participant.isCameraOff && <VideoOff className="h-3.5 w-3.5 text-amber-600" />}
-                {participant.isScreenSharing && <MonitorUp className="h-3.5 w-3.5 text-accent-muted" />}
-              </div>
-            )}
           </li>
         ))}
       </ul>
-
-      {meetingActive && (
-        <p className="mt-3 text-xs" style={{ color: 'var(--ticket-muted)' }}>
-          Red dot = in meeting
-        </p>
-      )}
 
       <button
         type="button"

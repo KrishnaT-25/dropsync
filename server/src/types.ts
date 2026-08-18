@@ -23,7 +23,6 @@ export interface Participant {
   id: string
   name: string
   socketId?: string
-  inMeeting?: boolean
   isMuted?: boolean
   isCameraOff?: boolean
   isScreenSharing?: boolean
@@ -35,7 +34,6 @@ export interface RoomRecord {
   expiresAt: string
   participants: Participant[]
   activities: ActivityItem[]
-  meetingActive: boolean
   /** bcrypt hash — never expose to clients */
   passwordHash?: string
 }
@@ -47,7 +45,6 @@ export interface PublicRoomRecord {
   expiresAt: string
   participants: Participant[]
   activities: ActivityItem[]
-  meetingActive: boolean
   hasPassword: boolean
 }
 
@@ -62,3 +59,31 @@ export interface JoinRoomResponse {
 }
 
 export type JoinRoomErrorCode = 'password_required' | 'incorrect_password'
+
+export interface MeetingParticipant {
+  id: string
+  name: string
+  isHost: boolean
+  socketId?: string
+  isMuted: boolean
+  isCameraOff: boolean
+  isScreenSharing: boolean
+}
+
+export interface MeetingRecord {
+  code: string
+  hostParticipantId: string
+  createdAt: string
+  expiresAt: string
+  participants: MeetingParticipant[]
+}
+
+export interface PublicMeetingRecord {
+  code: string
+  hostParticipantId: string
+  createdAt: string
+  expiresAt: string
+  participants: Array<Omit<MeetingParticipant, 'socketId'>>
+}
+
+export type MeetingEndedReason = 'host_ended' | 'host_left'

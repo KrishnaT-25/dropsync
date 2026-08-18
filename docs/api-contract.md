@@ -69,6 +69,8 @@ Optional JSON:
 ```
 
 Password hashes are never returned — only `hasPassword`.
+
+> Note: Rooms no longer host video meetings. Use `/api/meetings` for standalone calls. `meetingActive` may be absent on newer servers.
 ---
 
 ## `GET /api/rooms/:code`
@@ -198,6 +200,71 @@ Fallback upload when P2P fails (raw body, max 32MB). Headers: `x-file-name`, `x-
 
 ---
 
+## `POST /api/meetings`
+
+Create a standalone video meeting. Creator is recorded as host.
+
+### Response `201`
+
+```json
+{
+  "meeting": {
+    "code": "XYZ789",
+    "hostParticipantId": "550e8400-e29b-41d4-a716-446655440000",
+    "createdAt": "2026-08-18T14:00:00.000Z",
+    "expiresAt": "2026-08-18T22:00:00.000Z",
+    "participants": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "name": "Host",
+        "isHost": true,
+        "isMuted": false,
+        "isCameraOff": false,
+        "isScreenSharing": false
+      }
+    ]
+  },
+  "participantId": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+---
+
+## `GET /api/meetings/:code`
+
+### Response `200`
+
+```json
+{ "meeting": { "...": "PublicMeetingRecord" } }
+```
+
+### Response `404`
+
+```json
+{ "error": "Meeting not found or ended" }
+```
+
+---
+
+## `POST /api/meetings/:code/join`
+
+### Request body
+
+```json
+{ "displayName": "Alex" }
+```
+
+### Response `200`
+
+```json
+{
+  "meeting": { "...": "PublicMeetingRecord" },
+  "participantId": "uuid"
+}
+```
+
+---
+
 ## Shared types
 
 ### `RoomRecord`
@@ -209,7 +276,6 @@ Fallback upload when P2P fails (raw body, max 32MB). Headers: `x-file-name`, `x-
 | `expiresAt` | string (ISO) | TTL end time |
 | `participants` | `Participant[]` | Current participants |
 | `activities` | `ActivityItem[]` | Activity feed |
-| `meetingActive` | boolean | True if any participant has `inMeeting` |
 | `hasPassword` | boolean | Whether the room requires a password (hash never exposed) |
 
 ### `Participant`
@@ -218,11 +284,16 @@ Fallback upload when P2P fails (raw body, max 32MB). Headers: `x-file-name`, `x-
 |-------|------|-------------|
 | `id` | string (uuid) | Participant id |
 | `name` | string | Display name |
-| `socketId` | string? | Bound Socket.IO id when connected |
-| `inMeeting` | boolean? | In meeting |
-| `isMuted` | boolean? | Mic muted |
-| `isCameraOff` | boolean? | Camera off |
-| `isScreenSharing` | boolean? | Screen sharing |
+| `socketId` | string? | Bound Socket.IO id when connected (never sent to clients) |
+
+### `MeetingRecord` / public meeting
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `code` | string | Meeting code |
+| `hostParticipantId` | string (uuid) | Host participant id |
+| `createdAt` / `expiresAt` | string (ISO) | Lifetime |
+| `participants` | array | `{ id, name, isHost, isMuted, isCameraOff, isScreenSharing }` |
 
 ### `ActivityItem`
 

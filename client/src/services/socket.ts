@@ -24,13 +24,6 @@ export interface ActivityPayload {
   }
 }
 
-export interface MeetingStatePayload {
-  inMeeting?: boolean
-  isMuted?: boolean
-  isCameraOff?: boolean
-  isScreenSharing?: boolean
-}
-
 let socket: Socket | null = null
 
 export function getSocket(): Socket {
@@ -71,10 +64,6 @@ export function joinRoomSocket(
 
 export function emitActivity(payload: ActivityPayload) {
   getSocket().emit('activity', payload)
-}
-
-export function emitMeetingState(payload: MeetingStatePayload) {
-  getSocket().emit('meeting-state', payload)
 }
 
 export function emitSystemActivity(content: string) {

@@ -8,7 +8,6 @@ interface RoomSidebarProps {
   joinUrl: string
   expiresAt: Date
   participants: Participant[]
-  meetingActive?: boolean
   onLeave: () => void
   onExpire?: () => void
 }
@@ -18,7 +17,6 @@ export function RoomSidebar({
   joinUrl,
   expiresAt,
   participants,
-  meetingActive = false,
   onLeave,
   onExpire,
 }: RoomSidebarProps) {
@@ -51,11 +49,7 @@ export function RoomSidebar({
         />
 
         <div className="p-5 sm:p-6">
-          <ParticipantsList
-            participants={participants}
-            meetingActive={meetingActive}
-            onLeave={onLeave}
-          />
+          <ParticipantsList participants={participants} onLeave={onLeave} />
         </div>
       </div>
     </aside>

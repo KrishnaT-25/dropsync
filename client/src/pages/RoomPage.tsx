@@ -1,13 +1,11 @@
 import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
-import { MeetingPanel } from '../components/meeting/MeetingPanel'
 import { AppShell } from '../components/layout/AppShell'
 import { Header } from '../components/layout/Header'
 import { ActivityFeed } from '../components/room/ActivityFeed'
 import { MessageInput } from '../components/room/MessageInput'
 import { RoomSidebar } from '../components/room/RoomSidebar'
-import { MeetingProvider } from '../context/MeetingContext'
 import { useRoom } from '../context/RoomContext'
 import { normalizeRoomCode } from '../utils/roomCode'
 
@@ -40,7 +38,7 @@ function ConnectionBadge() {
   )
 }
 
-function RoomContent() {
+export function RoomPage() {
   const { code: paramCode } = useParams<{ code: string }>()
   const navigate = useNavigate()
   const {
@@ -125,7 +123,6 @@ function RoomContent() {
           joinUrl={joinUrl}
           expiresAt={room.expiresAt}
           participants={room.participants}
-          meetingActive={room.meetingActive}
           onLeave={handleLeave}
           onExpire={handleExpire}
         />
@@ -138,7 +135,6 @@ function RoomContent() {
             boxShadow: 'var(--shadow-card)',
           }}
         >
-          <MeetingPanel />
           <ActivityFeed activities={room.activities} selfParticipantId={participantId} />
           <MessageInput
             onSend={sendMessage}
@@ -149,13 +145,5 @@ function RoomContent() {
         </section>
       </main>
     </AppShell>
-  )
-}
-
-export function RoomPage() {
-  return (
-    <MeetingProvider>
-      <RoomContent />
-    </MeetingProvider>
   )
 }

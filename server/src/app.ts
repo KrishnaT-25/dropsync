@@ -1,6 +1,7 @@
 import cors from 'cors'
 import express from 'express'
 import { config } from './config.js'
+import { meetingsRouter } from './routes/meetings.js'
 import { roomsRouter } from './routes/rooms.js'
 import { transfersRouter } from './routes/transfers.js'
 import { getTransferStats } from './services/transferStats.js'
@@ -47,6 +48,7 @@ export function createApp() {
   })
 
   app.use('/api/rooms', roomsRouter)
+  app.use('/api/meetings', meetingsRouter)
   app.use('/api/transfers', transfersRouter)
 
   app.use((_req, res) => {

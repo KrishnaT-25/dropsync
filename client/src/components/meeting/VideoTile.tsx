@@ -1,13 +1,14 @@
 import { MicOff, MonitorUp, User, VideoOff } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import type { MeetingTile } from '../../types'
 
 interface VideoTileProps {
   tile: MeetingTile
   videoRef?: React.RefObject<HTMLVideoElement | null>
+  hostMenu?: ReactNode
 }
 
-export function VideoTile({ tile, videoRef }: VideoTileProps) {
+export function VideoTile({ tile, videoRef, hostMenu }: VideoTileProps) {
   const internalRef = useRef<HTMLVideoElement>(null)
   const ref = videoRef ?? internalRef
 
@@ -17,7 +18,7 @@ export function VideoTile({ tile, videoRef }: VideoTileProps) {
     video.srcObject = tile.stream ?? null
     if (tile.stream) {
       void video.play().catch(() => {
-        // ignore autoplay rejection
+        // ignore
       })
     }
   }, [tile.stream, ref])
@@ -59,6 +60,7 @@ export function VideoTile({ tile, videoRef }: VideoTileProps) {
         <div className="flex items-center justify-between gap-2">
           <span className="truncate text-xs font-medium text-white">
             {tile.isYou ? 'You' : tile.name}
+            {tile.isHost && !tile.isYou ? ' · Host' : ''}
           </span>
           <div className="flex items-center gap-1.5">
             {tile.isMuted && <MicOff className="h-3.5 w-3.5 text-red-400" />}
@@ -66,6 +68,7 @@ export function VideoTile({ tile, videoRef }: VideoTileProps) {
               <VideoOff className="h-3.5 w-3.5 text-amber-300" />
             )}
             {tile.isScreenSharing && <MonitorUp className="h-3.5 w-3.5 text-accent" />}
+            {!tile.isYou && hostMenu}
           </div>
         </div>
       </div>

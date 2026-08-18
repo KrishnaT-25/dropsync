@@ -12,7 +12,7 @@ import * as api from '../services/api'
 import { ApiRequestError } from '../services/api'
 import { fileTransferManager } from '../services/fileTransfer'
 import * as socket from '../services/socket'
-import type { ActivityItem, ConnectionStatus, JoinRoomResult, Participant, RoomState } from '../types'
+import type { ActivityItem, ConnectionStatus, JoinRoomResult, RoomState } from '../types'
 import { applyRoomState, mapApiRoom, mergeActivity } from '../utils/roomMapper'
 
 const STORAGE_KEY = 'dropsync-session'
@@ -35,12 +35,7 @@ interface RoomContextValue {
   sendClipboard: (content: string) => void
   sendCodeSnippet: (content: string) => void
   sendFile: (file: File) => void
-  addSystemActivity: (content: string) => void
   restoreRoom: (code: string) => Promise<boolean>
-  updateParticipantMeetingState: (
-    participantId: string,
-    patch: Partial<Pick<Participant, 'inMeeting' | 'isMuted' | 'isCameraOff' | 'isScreenSharing'>>,
-  ) => void
 }
 
 const RoomContext = createContext<RoomContextValue | null>(null)
@@ -495,60 +490,6 @@ export function RoomProvider({ children }: { children: ReactNode }) {
     [connection.connected, participantId],
   )
 
-  const addSystemActivity = useCallback(
-    (content: string) => {
-      if (connection.connected) {
-        socket.emitSystemActivity(content)
-        return
-      }
-
-      setRoom((prev) => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          activities: [
-            ...prev.activities,
-            {
-              id: crypto.randomUUID(),
-              type: 'meeting',
-              content,
-              sender: 'You',
-              senderId: participantId ?? undefined,
-              timestamp: new Date(),
-            },
-          ],
-        }
-      })
-    },
-    [connection.connected, participantId],
-  )
-
-  const updateParticipantMeetingState = useCallback(
-    (
-      targetId: string,
-      patch: Partial<Pick<Participant, 'inMeeting' | 'isMuted' | 'isCameraOff' | 'isScreenSharing'>>,
-    ) => {
-      setRoom((prev) => {
-        if (!prev) return prev
-
-        const participants = prev.participants.map((participant) =>
-          participant.id === targetId ? { ...participant, ...patch } : participant,
-        )
-
-        return {
-          ...prev,
-          participants,
-          meetingActive: participants.some((p) => p.inMeeting),
-        }
-      })
-
-      if (targetId === participantIdRef.current && connection.connected) {
-        socket.emitMeetingState(patch)
-      }
-    },
-    [connection.connected],
-  )
-
   const value = useMemo(
     () => ({
       room,
@@ -562,9 +503,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       sendClipboard,
       sendCodeSnippet,
       sendFile,
-      addSystemActivity,
       restoreRoom,
-      updateParticipantMeetingState,
     }),
     [
       room,
@@ -578,9 +517,7 @@ export function RoomProvider({ children }: { children: ReactNode }) {
       sendClipboard,
       sendCodeSnippet,
       sendFile,
-      addSystemActivity,
       restoreRoom,
-      updateParticipantMeetingState,
     ],
   )
 

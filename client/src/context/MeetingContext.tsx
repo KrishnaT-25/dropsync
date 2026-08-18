@@ -9,19 +9,20 @@ import {
   type ReactNode,
 } from 'react'
 import type { MeetingTile } from '../types'
-import { useRoom } from './RoomContext'
+import { useMeetingSession } from './MeetingSessionContext'
 
 interface MeetingContextValue {
-  isActive: boolean
   isMuted: boolean
   isCameraOff: boolean
   isScreenSharing: boolean
   error: string | null
   tiles: MeetingTile[]
+  previewStream: MediaStream | null
   localVideoRef: React.RefObject<HTMLVideoElement | null>
   screenVideoRef: React.RefObject<HTMLVideoElement | null>
-  startMeeting: () => Promise<void>
-  endMeeting: () => void
+  ensurePreview: () => Promise<MediaStream | null>
+  stopPreview: () => void
+  leaveOrEnd: () => void
   toggleMute: () => void
   toggleCamera: () => void
   toggleScreenShare: () => Promise<void>
@@ -33,33 +34,30 @@ function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop())
 }
 
-function displayParticipantName(name: string | undefined, isYou: boolean): string {
-  if (isYou) return 'You'
-  if (!name || name === 'You') return 'Host'
-  return name
-}
-
 export function MeetingProvider({ children }: { children: ReactNode }) {
-  const { room, participantId, addSystemActivity, updateParticipantMeetingState } = useRoom()
-  const [isActive, setIsActive] = useState(false)
+  const {
+    meeting,
+    participantId,
+    isJoined,
+    isHost,
+    leaveCall,
+    endCallForEveryone,
+    emitMediaState,
+    emitActivity,
+  } = useMeetingSession()
+
   const [isMuted, setIsMuted] = useState(false)
   const [isCameraOff, setIsCameraOff] = useState(false)
   const [isScreenSharing, setIsScreenSharing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [streamVersion, setStreamVersion] = useState(0)
+  const [previewStream, setPreviewStream] = useState<MediaStream | null>(null)
 
   const localStreamRef = useRef<MediaStream | null>(null)
   const screenStreamRef = useRef<MediaStream | null>(null)
   const localVideoRef = useRef<HTMLVideoElement | null>(null)
   const screenVideoRef = useRef<HTMLVideoElement | null>(null)
   const acquiringRef = useRef(false)
-  const isActiveRef = useRef(false)
-  const participantIdRef = useRef(participantId)
-  const updateMeetingRef = useRef(updateParticipantMeetingState)
-
-  participantIdRef.current = participantId
-  updateMeetingRef.current = updateParticipantMeetingState
-  isActiveRef.current = isActive
 
   const attachStream = useCallback((video: HTMLVideoElement | null, stream: MediaStream | null) => {
     if (!video) return
@@ -68,24 +66,25 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     }
     if (stream) {
       void video.play().catch(() => {
-        // Autoplay may be blocked until a user gesture; ignore.
+        // ignore autoplay rejection
       })
     }
   }, [])
 
   useEffect(() => {
     attachStream(localVideoRef.current, isCameraOff ? null : localStreamRef.current)
-  }, [isCameraOff, isActive, streamVersion, attachStream])
+  }, [isCameraOff, isJoined, streamVersion, attachStream])
 
   useEffect(() => {
     attachStream(screenVideoRef.current, screenStreamRef.current)
   }, [isScreenSharing, streamVersion, attachStream])
 
-  const stopLocalMedia = useCallback(() => {
+  const stopPreview = useCallback(() => {
     stopStream(localStreamRef.current)
     stopStream(screenStreamRef.current)
     localStreamRef.current = null
     screenStreamRef.current = null
+    setPreviewStream(null)
     attachStream(localVideoRef.current, null)
     attachStream(screenVideoRef.current, null)
     setIsMuted(false)
@@ -94,45 +93,19 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     setStreamVersion((v) => v + 1)
   }, [attachStream])
 
-  const leaveMeetingLocal = useCallback(
-    (announce: boolean) => {
-      stopLocalMedia()
-      setIsActive(false)
-      setError(null)
-      const pid = participantIdRef.current
-      if (pid) {
-        updateMeetingRef.current(pid, {
-          inMeeting: false,
-          isMuted: false,
-          isCameraOff: false,
-          isScreenSharing: false,
-        })
-      }
-      if (announce) addSystemActivity('left the meeting')
-    },
-    [addSystemActivity, stopLocalMedia],
-  )
-
-  // Only tear down when leaving the room — never when callback identities change.
-  useEffect(() => {
-    if (!room && isActiveRef.current) {
-      leaveMeetingLocal(false)
-    }
-  }, [room, leaveMeetingLocal])
-
   useEffect(() => {
     return () => {
       stopStream(localStreamRef.current)
       stopStream(screenStreamRef.current)
-      localStreamRef.current = null
-      screenStreamRef.current = null
     }
   }, [])
 
   const acquireMedia = useCallback(async () => {
-    if (localStreamRef.current) return localStreamRef.current
+    if (localStreamRef.current) {
+      setPreviewStream(localStreamRef.current)
+      return localStreamRef.current
+    }
     if (acquiringRef.current) {
-      // Wait briefly for in-flight acquire
       for (let i = 0; i < 40 && acquiringRef.current; i++) {
         await new Promise((r) => setTimeout(r, 50))
       }
@@ -144,89 +117,60 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       let stream: MediaStream
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        setIsCameraOff(false)
+        setIsMuted(false)
       } catch {
-        // Camera busy/denied — still try audio-only so mic works
         stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true })
         setIsCameraOff(true)
+        setIsMuted(false)
       }
       localStreamRef.current = stream
-      const hasVideo = stream.getVideoTracks().length > 0
-      const hasAudio = stream.getAudioTracks().length > 0
-      setIsMuted(!hasAudio)
-      setIsCameraOff(!hasVideo)
+      setPreviewStream(stream)
       setStreamVersion((v) => v + 1)
-      attachStream(localVideoRef.current, hasVideo ? stream : null)
+      attachStream(localVideoRef.current, stream.getVideoTracks().length ? stream : null)
       return stream
     } finally {
       acquiringRef.current = false
     }
   }, [attachStream])
 
-  const startMeeting = useCallback(async () => {
+  const ensurePreview = useCallback(async () => {
     setError(null)
     try {
-      await acquireMedia()
-      setIsActive(true)
-      const pid = participantIdRef.current
-      if (pid) {
-        updateMeetingRef.current(pid, {
-          inMeeting: true,
-          isMuted: false,
-          isCameraOff: !localStreamRef.current?.getVideoTracks().length,
-        })
-      }
-      addSystemActivity('started a meeting')
+      return await acquireMedia()
     } catch {
-      setError('Camera or microphone access was denied. Check browser permissions and try again.')
-      setIsActive(false)
+      setError('Camera or microphone access was denied.')
+      return null
     }
-  }, [acquireMedia, addSystemActivity])
+  }, [acquireMedia])
 
-  // Peer started a meeting — show the call UI and request media (may need a click if autoplay/gesture blocked).
   useEffect(() => {
-    if (!room?.meetingActive || isActive) return
-    const self = room.participants.find((p) => p.isYou)
-    if (self?.inMeeting) return
+    const onForceMute = () => {
+      if (!localStreamRef.current) return
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = false
+      })
+      setIsMuted(true)
+      emitMediaState({ isMuted: true })
+    }
+    window.addEventListener('dropsync-force-mute', onForceMute)
+    return () => window.removeEventListener('dropsync-force-mute', onForceMute)
+  }, [emitMediaState])
 
-    void (async () => {
-      setError(null)
-      try {
-        await acquireMedia()
-        setIsActive(true)
-        const pid = participantIdRef.current
-        if (pid) {
-          updateMeetingRef.current(pid, {
-            inMeeting: true,
-            isMuted: false,
-            isCameraOff: !localStreamRef.current?.getVideoTracks().length,
-          })
-        }
-      } catch {
-        // Need a user gesture for getUserMedia in many browsers — keep lobby CTA visible.
-        setError('Allow camera/microphone, then click Start meeting to join the call.')
-      }
-    })()
-  }, [room?.meetingActive, room?.participants, isActive, acquireMedia])
-
-  const endMeeting = useCallback(() => {
-    leaveMeetingLocal(true)
-  }, [leaveMeetingLocal])
+  const leaveOrEnd = useCallback(() => {
+    if (isHost) {
+      emitActivity('ended the meeting')
+      endCallForEveryone()
+    } else {
+      emitActivity('left the call')
+      leaveCall()
+    }
+    stopPreview()
+  }, [emitActivity, endCallForEveryone, isHost, leaveCall, stopPreview])
 
   const toggleMute = useCallback(() => {
     if (!localStreamRef.current?.getAudioTracks().length) {
-      void acquireMedia()
-        .then(() => {
-          const next = true
-          localStreamRef.current?.getAudioTracks().forEach((track) => {
-            track.enabled = !next
-          })
-          setIsMuted(next)
-          const pid = participantIdRef.current
-          if (pid) updateMeetingRef.current(pid, { isMuted: next })
-        })
-        .catch(() => {
-          setError('Microphone access was denied.')
-        })
+      void ensurePreview()
       return
     }
     const next = !isMuted
@@ -234,26 +178,16 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       track.enabled = !next
     })
     setIsMuted(next)
-    const pid = participantIdRef.current
-    if (pid) updateMeetingRef.current(pid, { isMuted: next })
-  }, [acquireMedia, isMuted])
+    emitMediaState({ isMuted: next })
+  }, [emitMediaState, ensurePreview, isMuted])
 
   const toggleCamera = useCallback(() => {
     if (!localStreamRef.current?.getVideoTracks().length) {
-      void acquireMedia()
-        .then((stream) => {
-          if (!stream.getVideoTracks().length) {
-            setError('Camera is unavailable (in use by another tab or denied).')
-            return
-          }
-          setIsCameraOff(false)
-          setStreamVersion((v) => v + 1)
-          const pid = participantIdRef.current
-          if (pid) updateMeetingRef.current(pid, { isCameraOff: false })
-        })
-        .catch(() => {
-          setError('Camera access was denied.')
-        })
+      void ensurePreview().then((stream) => {
+        if (!stream?.getVideoTracks().length) {
+          setError('Camera is unavailable.')
+        }
+      })
       return
     }
     const next = !isCameraOff
@@ -262,9 +196,8 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     })
     setIsCameraOff(next)
     setStreamVersion((v) => v + 1)
-    const pid = participantIdRef.current
-    if (pid) updateMeetingRef.current(pid, { isCameraOff: next })
-  }, [acquireMedia, isCameraOff])
+    emitMediaState({ isCameraOff: next })
+  }, [emitMediaState, ensurePreview, isCameraOff])
 
   const toggleScreenShare = useCallback(async () => {
     if (isScreenSharing) {
@@ -273,9 +206,8 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       attachStream(screenVideoRef.current, null)
       setIsScreenSharing(false)
       setStreamVersion((v) => v + 1)
-      const pid = participantIdRef.current
-      if (pid) updateMeetingRef.current(pid, { isScreenSharing: false })
-      addSystemActivity('stopped screen sharing')
+      emitMediaState({ isScreenSharing: false })
+      emitActivity('stopped screen sharing')
       return
     }
 
@@ -289,9 +221,8 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       attachStream(screenVideoRef.current, stream)
       setIsScreenSharing(true)
       setStreamVersion((v) => v + 1)
-      const pid = participantIdRef.current
-      if (pid) updateMeetingRef.current(pid, { isScreenSharing: true })
-      addSystemActivity('started screen sharing')
+      emitMediaState({ isScreenSharing: true })
+      emitActivity('started screen sharing')
 
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         stopStream(screenStreamRef.current)
@@ -299,24 +230,24 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
         attachStream(screenVideoRef.current, null)
         setIsScreenSharing(false)
         setStreamVersion((v) => v + 1)
-        const id = participantIdRef.current
-        if (id) updateMeetingRef.current(id, { isScreenSharing: false })
-        addSystemActivity('stopped screen sharing')
+        emitMediaState({ isScreenSharing: false })
+        emitActivity('stopped screen sharing')
       })
     } catch {
       setError('Screen sharing was cancelled or blocked.')
     }
-  }, [addSystemActivity, attachStream, isScreenSharing])
+  }, [attachStream, emitActivity, emitMediaState, isScreenSharing])
 
   const tiles = useMemo<MeetingTile[]>(() => {
-    if (!room || !isActive) return []
+    if (!meeting || !isJoined) return []
 
-    const self = room.participants.find((p) => p.isYou)
+    const self = meeting.participants.find((p) => p.id === participantId)
     const result: MeetingTile[] = [
       {
         id: self?.id ?? 'you',
-        name: displayParticipantName(self?.name, true),
+        name: 'You',
         isYou: true,
+        isHost: self?.isHost,
         isMuted,
         isCameraOff,
         isScreenSharing,
@@ -324,16 +255,16 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       },
     ]
 
-    room.participants
-      .filter((p) => !p.isYou && p.inMeeting)
+    meeting.participants
+      .filter((p) => p.id !== participantId)
       .forEach((remote) => {
         result.push({
           id: remote.id,
-          name: displayParticipantName(remote.name, false),
+          name: remote.name,
+          isHost: remote.isHost,
           isMuted: remote.isMuted,
-          isCameraOff: remote.isCameraOff ?? true,
+          isCameraOff: remote.isCameraOff,
           isScreenSharing: remote.isScreenSharing,
-          // Remote A/V over WebRTC is out of scope — placeholder tile.
           stream: null,
         })
       })
@@ -349,33 +280,35 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
     }
 
     return result
-  }, [room, isActive, isMuted, isCameraOff, isScreenSharing, streamVersion])
+  }, [meeting, isJoined, participantId, isMuted, isCameraOff, isScreenSharing, streamVersion])
 
   const value = useMemo(
     () => ({
-      isActive,
       isMuted,
       isCameraOff,
       isScreenSharing,
       error,
       tiles,
+      previewStream,
       localVideoRef,
       screenVideoRef,
-      startMeeting,
-      endMeeting,
+      ensurePreview,
+      stopPreview,
+      leaveOrEnd,
       toggleMute,
       toggleCamera,
       toggleScreenShare,
     }),
     [
-      isActive,
       isMuted,
       isCameraOff,
       isScreenSharing,
       error,
       tiles,
-      startMeeting,
-      endMeeting,
+      previewStream,
+      ensurePreview,
+      stopPreview,
+      leaveOrEnd,
       toggleMute,
       toggleCamera,
       toggleScreenShare,

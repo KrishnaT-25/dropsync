@@ -3,12 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Header } from '../components/layout/Header'
 import { RoomTabs } from '../components/home/RoomTabs'
+import { VideoCallTabs } from '../components/home/VideoCallTabs'
 import { useRoom } from '../context/RoomContext'
+import { isValidMeetingCode, normalizeMeetingCode } from '../utils/meetingCode'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode'
 
 const features = [
   'Instant file sharing',
-  'Video & audio meetings',
+  'Standalone video calls',
   'Screen sharing',
   'Universal clipboard',
 ]
@@ -19,6 +21,12 @@ export function HomePage() {
   const { joinRoom } = useRoom()
 
   useEffect(() => {
+    const meetCode = searchParams.get('meet')
+    if (meetCode && isValidMeetingCode(meetCode)) {
+      navigate(`/meet/${normalizeMeetingCode(meetCode)}`, { replace: true })
+      return
+    }
+
     const joinCode = searchParams.get('join')
     if (!joinCode || !isValidRoomCode(joinCode)) return
     if (searchParams.get('needPassword') === '1') return
@@ -51,7 +59,7 @@ export function HomePage() {
             Drop into a room.
           </h1>
           <p className="mx-auto max-w-lg text-sm leading-relaxed sm:text-base" style={{ color: 'var(--text-secondary)' }}>
-            Share files, text, links, and code across devices — with built-in video meetings and screen sharing.
+            Share files, text, links, and code across devices — or start a standalone video call.
           </p>
 
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
@@ -72,6 +80,7 @@ export function HomePage() {
         </div>
 
         <RoomTabs />
+        <VideoCallTabs />
 
         <p className="mt-8 text-center text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
           No account needed. Rooms expire automatically.

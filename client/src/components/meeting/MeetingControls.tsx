@@ -7,6 +7,7 @@ import {
   VideoOff,
 } from 'lucide-react'
 import { useMeeting } from '../../context/MeetingContext'
+import { useMeetingSession } from '../../context/MeetingSessionContext'
 
 export function MeetingControls() {
   const {
@@ -16,8 +17,9 @@ export function MeetingControls() {
     toggleMute,
     toggleCamera,
     toggleScreenShare,
-    endMeeting,
+    leaveOrEnd,
   } = useMeeting()
+  const { isHost } = useMeetingSession()
 
   const buttons = [
     {
@@ -64,13 +66,13 @@ export function MeetingControls() {
 
       <button
         type="button"
-        onClick={endMeeting}
-        aria-label="Leave meeting"
-        title="Leave meeting"
+        onClick={leaveOrEnd}
+        aria-label={isHost ? 'End meeting' : 'Leave meeting'}
+        title={isHost ? 'End meeting for everyone' : 'Leave meeting'}
         className="inline-flex h-11 items-center gap-2 rounded-xl bg-red-500 px-4 text-sm font-semibold text-white transition hover:bg-red-400 active:scale-95 sm:h-12 sm:px-5"
       >
         <PhoneOff className="h-4 w-4" />
-        <span className="hidden sm:inline">Leave</span>
+        <span className="hidden sm:inline">{isHost ? 'End' : 'Leave'}</span>
       </button>
     </div>
   )

@@ -120,7 +120,6 @@ export class RoomStore {
         activities: [
           createActivity('system', 'Room created — share the code or QR to invite others'),
         ],
-        meetingActive: false,
         ...(passwordHash ? { passwordHash } : {}),
       }
 
@@ -205,13 +204,8 @@ export class RoomStore {
     const participant = room.participants.find((p) => p.id === participantId)
     if (participant) {
       participant.socketId = undefined
-      participant.inMeeting = false
-      participant.isMuted = false
-      participant.isCameraOff = false
-      participant.isScreenSharing = false
     }
 
-    room.meetingActive = room.participants.some((p) => p.inMeeting)
     await this.saveRoom(room)
     return structuredClone(room)
   }
@@ -228,7 +222,6 @@ export class RoomStore {
     room.activities.push(
       createActivity('system', `${removed.name} left the room`, removed.name, removed.id),
     )
-    room.meetingActive = room.participants.some((p) => p.inMeeting)
 
     if (room.participants.length === 0) {
       await this.deleteRoom(normalized, room, 'deleted')
@@ -259,28 +252,6 @@ export class RoomStore {
     room.activities.push(item)
     await this.saveRoom(room)
     return structuredClone(item)
-  }
-
-  async updateMeetingState(
-    code: string,
-    participantId: string,
-    patch: Partial<Pick<Participant, 'inMeeting' | 'isMuted' | 'isCameraOff' | 'isScreenSharing'>>,
-  ): Promise<RoomRecord | null> {
-    const normalized = normalizeRoomCode(code)
-    const room = await this.readRoom(normalized)
-    if (!room) return null
-    if (new Date(room.expiresAt).getTime() <= Date.now()) {
-      await this.expireRoom(normalized)
-      return null
-    }
-
-    const participant = room.participants.find((p) => p.id === participantId)
-    if (!participant) return null
-
-    Object.assign(participant, patch)
-    room.meetingActive = room.participants.some((p) => p.inMeeting)
-    await this.saveRoom(room)
-    return structuredClone(room)
   }
 
   async expireRoom(code: string): Promise<void> {

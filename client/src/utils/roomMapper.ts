@@ -13,17 +13,12 @@ export function mapApiRoom(
   return {
     code: apiRoom.code,
     expiresAt: new Date(apiRoom.expiresAt),
-    meetingActive: apiRoom.meetingActive,
     participants: apiRoom.participants.map((p) => {
       const isYou = p.id === participantId
       return {
         ...p,
         name: displayName(p.name, isYou),
         isYou,
-        inMeeting: p.inMeeting ?? false,
-        isMuted: p.isMuted ?? false,
-        isCameraOff: p.isCameraOff ?? false,
-        isScreenSharing: p.isScreenSharing ?? false,
       }
     }),
     activities: apiRoom.activities.map((a) => ({
@@ -45,7 +40,6 @@ function mergeFileMeta(server: FileMeta | undefined, local: FileMeta | undefined
   if (!server) return local
   if (!local) return server
 
-  // Prefer local runtime fields (blob URLs, live progress) over server snapshots.
   const preferLocalStatus =
     local.status === 'complete' ||
     local.status === 'failed' ||
@@ -85,24 +79,6 @@ export function applyRoomState(
       .filter((a) => a.type === 'file' && a.fileMeta?.transferId)
       .map((a) => [a.fileMeta!.transferId!, a.fileMeta!]),
   )
-
-  // Keep optimistic self meeting flags if the server snapshot briefly lags.
-  const prevSelf = prev.participants.find((p) => p.id === participantId)
-  const nextSelf = next.participants.find((p) => p.id === participantId)
-  if (prevSelf?.inMeeting && nextSelf && !nextSelf.inMeeting && prev.meetingActive) {
-    next.participants = next.participants.map((p) =>
-      p.id === participantId
-        ? {
-            ...p,
-            inMeeting: true,
-            isMuted: prevSelf.isMuted,
-            isCameraOff: prevSelf.isCameraOff,
-            isScreenSharing: prevSelf.isScreenSharing,
-          }
-        : p,
-    )
-    next.meetingActive = true
-  }
 
   return {
     ...next,

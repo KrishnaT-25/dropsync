@@ -83,28 +83,9 @@ Requires an active `join-room` session. Invalid payloads are ignored (no ack).
 
 ---
 
-### `meeting-state`
-
-Update this participant’s meeting flags.
-
-**Payload** (all fields optional)
-
-```json
-{
-  "inMeeting": true,
-  "isMuted": false,
-  "isCameraOff": true,
-  "isScreenSharing": false
-}
-```
-
-Requires an active session. On success, broadcasts `room-state` to the room.
-
----
-
 ### `system-activity`
 
-Convenience event for meeting-related system lines (stored as `type: "meeting"`).
+Convenience event for room system lines (stored as `type: "meeting"` historically).
 
 **Payload**
 
@@ -112,19 +93,19 @@ Convenience event for meeting-related system lines (stored as `type: "meeting"`)
 content: string  // non-empty after trim
 ```
 
-Requires an active session. Broadcasts `activity` to the room.
+Requires an active room session. Broadcasts `activity` to the room.
 
 ---
 
 ### `leave-room`
 
-Unbind socket flags for this participant without removing them from the room roster.
+Unbind socket for this participant without removing them from the room roster.
 
 **Payload:** none
 
 **Side effects**
 
-- Clears `socketId` and meeting flags on the participant
+- Clears `socketId` on the participant
 - Leaves the Socket.IO room
 - Broadcasts `room-state` if the room still exists
 
@@ -132,11 +113,13 @@ Unbind socket flags for this participant without removing them from the room ros
 
 ### `disconnect` (Socket.IO built-in)
 
-When the transport disconnects with an active session:
+When the transport disconnects with an active **room** session:
 
 - Removes the participant from the room
 - If others remain → broadcast `room-state`
 - If the room is empty → room is deleted and `room-expired` is emitted to the room channel
+
+When disconnecting with an active **meeting** session, see meeting handlers below (host disconnect ends the meeting for everyone).
 
 ---
 
@@ -154,7 +137,7 @@ WebRTC signaling for **file-transfer data channels only** (not meeting media).
 }
 ```
 
-Relayed by the server only to the target participant’s socket.
+Broadcast on the room channel; clients ignore messages not addressed to them.
 
 ---
 
@@ -173,11 +156,40 @@ After a storage-fallback upload, tell the room a download URL is ready.
 
 ---
 
+## Meeting-scoped events (channel `meeting:{code}`)
+
+Video calls are **not** room-scoped. Clients create/join via `/api/meetings`, then emit `join-meeting`.
+
+### Client → server
+
+| Event | Purpose |
+|-------|---------|
+| `join-meeting` | `{ code, participantId, displayName }` — ack returns public meeting |
+| `meeting-media-state` | `{ isMuted?, isCameraOff?, isScreenSharing? }` |
+| `meeting-activity` | `{ content }` — server stamps `actorId` / `actorName` |
+| `host-mute` | `{ targetParticipantId }` — host only; target gets `force-muted` |
+| `host-remove` | `{ targetParticipantId }` — host only; target gets `removed-by-host` |
+| `host-end` | End meeting for everyone (`meeting-ended` reason `host_ended`) |
+| `leave-meeting` | Guest leaves; if host leaves → end for all (`host_left`) |
+
+### Server → client
+
+| Event | Purpose |
+|-------|---------|
+| `meeting-state` | Full public meeting snapshot |
+| `peer-joined` / `peer-left` | Roster changes |
+| `meeting-activity` | `{ actorId, actorName, content }` — clients render You vs name |
+| `force-muted` | `{ targetParticipantId }` |
+| `removed-by-host` | Target only |
+| `meeting-ended` | `{ reason: "host_ended" \| "host_left" }` |
+
+---
+
 ## Server → client
 
 ### `room-state`
 
-Full room snapshot after joins, leaves, meeting updates, etc.
+Full room snapshot after joins, leaves, etc.
 
 **Payload:** `RoomRecord` (same shape as REST)
 

@@ -26,7 +26,6 @@ export interface Participant {
   id: string
   name: string
   isYou?: boolean
-  inMeeting?: boolean
   isMuted?: boolean
   isCameraOff?: boolean
   isScreenSharing?: boolean
@@ -37,13 +36,31 @@ export interface RoomState {
   expiresAt: Date
   participants: Participant[]
   activities: ActivityItem[]
-  meetingActive: boolean
+}
+
+export interface MeetingParticipant {
+  id: string
+  name: string
+  isHost: boolean
+  isMuted: boolean
+  isCameraOff: boolean
+  isScreenSharing: boolean
+  isYou?: boolean
+}
+
+export interface MeetingSessionState {
+  code: string
+  hostParticipantId: string
+  participants: MeetingParticipant[]
+  createdAt: string
+  expiresAt: string
 }
 
 export interface MeetingTile {
   id: string
   name: string
   isYou?: boolean
+  isHost?: boolean
   isMuted?: boolean
   isCameraOff?: boolean
   isScreenSharing?: boolean
@@ -56,8 +73,15 @@ export interface ApiRoomRecord {
   expiresAt: string
   participants: Array<Omit<Participant, 'isYou'>>
   activities: Array<Omit<ActivityItem, 'timestamp'> & { timestamp: string }>
-  meetingActive: boolean
   hasPassword?: boolean
+}
+
+export interface ApiMeetingRecord {
+  code: string
+  hostParticipantId: string
+  createdAt: string
+  expiresAt: string
+  participants: MeetingParticipant[]
 }
 
 export interface CreateRoomResponse {
@@ -80,3 +104,5 @@ export interface ConnectionStatus {
   connected: boolean
   error: string | null
 }
+
+export type MeetingExitReason = 'host_ended' | 'host_left' | 'removed' | 'left' | null
