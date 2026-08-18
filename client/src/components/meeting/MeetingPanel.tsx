@@ -10,7 +10,20 @@ import { FullscreenExitHint, VideoTile } from './VideoTile'
 function pickScreenStage(tiles: MeetingTile[]): MeetingTile | null {
   const localScreen = tiles.find((t) => t.id === 'screen-you' && t.stream)
   if (localScreen) return localScreen
-  return tiles.find((t) => t.isScreenSharing && t.stream && !t.isYou) ?? null
+  // Any remote currently sharing — their video track is the screen via replaceTrack.
+  return (
+    tiles.find((t) => Boolean(t.isScreenSharing) && Boolean(t.stream) && !t.isYou) ??
+    tiles.find((t) => Boolean(t.isScreenSharing) && Boolean(t.stream)) ??
+    null
+  )
+}
+
+function pickStage(tiles: MeetingTile[], pinnedId: string | null): MeetingTile | null {
+  if (pinnedId) {
+    const pinned = tiles.find((t) => t.id === pinnedId && t.stream)
+    if (pinned) return pinned
+  }
+  return pickScreenStage(tiles)
 }
 
 export function MeetingPanel() {
@@ -18,11 +31,24 @@ export function MeetingPanel() {
   const { meeting, isHost, activityLog, participantId, rateLimitHint } = useMeetingSession()
   const [copied, setCopied] = useState(false)
   const [browserFs, setBrowserFs] = useState(false)
+  const [pinnedId, setPinnedId] = useState<string | null>(null)
   const stageShellRef = useRef<HTMLDivElement>(null)
+  const prevScreenIdRef = useRef<string | null>(null)
 
   const inviteUrl = meeting ? `${window.location.origin}/meet/${meeting.code}` : ''
 
-  const stageTile = useMemo(() => pickScreenStage(tiles), [tiles])
+  const activeScreen = useMemo(() => pickScreenStage(tiles), [tiles])
+
+  // When someone starts sharing, focus their screen (clear conflicting pin).
+  useEffect(() => {
+    const id = activeScreen?.id ?? null
+    if (id && id !== prevScreenIdRef.current) {
+      setPinnedId(null)
+    }
+    prevScreenIdRef.current = id
+  }, [activeScreen?.id])
+
+  const stageTile = useMemo(() => pickStage(tiles, pinnedId), [tiles, pinnedId])
   const stripTiles = useMemo(() => {
     if (!stageTile) return tiles
     return tiles.filter((t) => t.id !== stageTile.id)
@@ -47,19 +73,19 @@ export function MeetingPanel() {
     return () => document.removeEventListener('fullscreenchange', onFsChange)
   }, [])
 
-  // When a share starts, grow into the stage layout; optional true fullscreen via button.
   const toggleFullscreen = useCallback(async () => {
     const el = stageShellRef.current
     if (!el) return
     try {
-      if (document.fullscreenElement === el) {
-        await document.exitFullscreen()
-      } else {
-        await el.requestFullscreen()
-      }
+      if (document.fullscreenElement === el) await document.exitFullscreen()
+      else await el.requestFullscreen()
     } catch {
-      // Browser may block without gesture; stage layout still fills the call.
+      // ignore
     }
+  }, [])
+
+  const togglePin = useCallback((tileId: string) => {
+    setPinnedId((prev) => (prev === tileId ? null : tileId))
   }, [])
 
   const renderTile = (tile: MeetingTile, size: 'stage' | 'pip' | 'grid') => (
@@ -67,17 +93,19 @@ export function MeetingPanel() {
       key={tile.id}
       tile={tile}
       size={size}
+      pinned={pinnedId === tile.id}
+      onTogglePin={() => togglePin(tile.id)}
       videoRef={
         tile.id === 'screen-you'
           ? screenVideoRef
-          : tile.isYou && !tile.isScreenSharing
+          : tile.isYou && tile.id !== 'screen-you'
             ? localVideoRef
             : undefined
       }
       isBrowserFullscreen={size === 'stage' ? browserFs : undefined}
       onToggleFullscreen={size === 'stage' ? () => void toggleFullscreen() : undefined}
       hostMenu={
-        !tile.isYou && !tile.isScreenSharing ? (
+        !tile.isYou && tile.id !== 'screen-you' ? (
           <HostParticipantMenu participantId={tile.id} participantName={tile.name} />
         ) : undefined
       }
@@ -149,7 +177,7 @@ export function MeetingPanel() {
           )}
         </div>
       ) : (
-        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {tiles.map((tile) => renderTile(tile, 'grid'))}
         </div>
       )}

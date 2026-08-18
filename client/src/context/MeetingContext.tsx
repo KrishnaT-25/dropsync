@@ -295,7 +295,10 @@ export function MeetingProvider({ children }: { children: ReactNode }) {
       emitActivity('started screen sharing')
 
       const displayTrack = stream.getVideoTracks()[0] ?? null
-      if (displayTrack) await meetingWebRTC.replaceVideoTrack(displayTrack)
+      if (displayTrack) {
+        displayTrack.contentHint = 'detail'
+        await meetingWebRTC.replaceVideoTrack(displayTrack)
+      }
 
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         stopStream(screenStreamRef.current)

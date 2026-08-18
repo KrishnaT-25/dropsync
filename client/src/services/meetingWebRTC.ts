@@ -17,6 +17,23 @@ interface PeerConnection {
 type RemoteStreamHandler = (peerId: string, stream: MediaStream | null) => void
 type MeshErrorHandler = (message: string) => void
 
+/** Keep an always-live video m-line so replaceTrack(screen) works for every peer. */
+function createBlackVideoTrack(): MediaStreamTrack {
+  const canvas = document.createElement('canvas')
+  canvas.width = 640
+  canvas.height = 360
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.fillStyle = '#0b0e11'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+  }
+  const stream = canvas.captureStream(5)
+  const track = stream.getVideoTracks()[0]
+  if (!track) throw new Error('Could not create placeholder video track')
+  track.contentHint = 'motion'
+  return track
+}
+
 /**
  * Mesh WebRTC for meeting A/V (one RTCPeerConnection per remote peer).
  * Signaling mirrors fileTransfer.ts: offer/answer/ICE with candidate queue.
@@ -28,6 +45,10 @@ export class MeetingWebRTCManager {
   private peers = new Map<string, PeerConnection>()
   private pendingCandidates = new Map<string, RTCIceCandidateInit[]>()
   private localStream: MediaStream | null = null
+  /** Outbound video currently pushed to peers (camera, screen, or black placeholder). */
+  private outboundVideoTrack: MediaStreamTrack | null = null
+  private placeholderVideoTrack: MediaStreamTrack | null = null
+  private remoteStreams = new Map<string, MediaStream>()
   private onRemoteStream: RemoteStreamHandler | null = null
   private onMeshError: MeshErrorHandler | null = null
   private makingOffer = new Set<string>()
@@ -88,52 +109,96 @@ export class MeetingWebRTCManager {
     } satisfies SignalMessage)
   }
 
-  /** Lexicographic rule: higher id is the offerer (avoids glare). */
   private shouldOffer(peerId: string): boolean {
     if (!this.selfId) return false
     return this.selfId > peerId
   }
 
+  private ensurePlaceholder(): MediaStreamTrack {
+    if (!this.placeholderVideoTrack || this.placeholderVideoTrack.readyState === 'ended') {
+      this.placeholderVideoTrack = createBlackVideoTrack()
+    }
+    return this.placeholderVideoTrack
+  }
+
+  private videoTrackForSend(stream: MediaStream | null): MediaStreamTrack {
+    const cam = stream?.getVideoTracks().find((t) => t.readyState === 'live' && t.enabled) ?? null
+    if (cam) return cam
+    const anyCam = stream?.getVideoTracks()[0] ?? null
+    if (anyCam && anyCam.readyState === 'live') return anyCam
+    return this.ensurePlaceholder()
+  }
+
   setLocalStream(stream: MediaStream | null) {
     this.localStream = stream
+    // Don't clobber an active screen-share outbound track.
+    if (this.outboundVideoTrack?.getSettings().displaySurface) {
+      for (const { pc } of this.peers.values()) {
+        this.syncAudioSender(pc, stream)
+      }
+      return
+    }
+    this.outboundVideoTrack = this.videoTrackForSend(stream)
     for (const { pc } of this.peers.values()) {
-      this.syncSenders(pc, stream)
+      this.syncSenders(pc, stream, this.outboundVideoTrack)
     }
   }
 
-  private syncSenders(pc: RTCPeerConnection, stream: MediaStream | null) {
+  private findSender(pc: RTCPeerConnection, kind: 'audio' | 'video'): RTCRtpSender | null {
+    const withTrack = pc.getSenders().find((s) => s.track?.kind === kind)
+    if (withTrack) return withTrack
+    const byTransceiver = pc.getTransceivers().find((t) => {
+      if (t.sender.track?.kind === kind) return true
+      if (t.receiver.track?.kind === kind) return true
+      return false
+    })
+    if (byTransceiver) return byTransceiver.sender
+    const idx = kind === 'audio' ? 0 : 1
+    return pc.getTransceivers()[idx]?.sender ?? null
+  }
+
+  private syncAudioSender(pc: RTCPeerConnection, stream: MediaStream | null) {
     const audioTrack = stream?.getAudioTracks()[0] ?? null
-    const videoTrack = stream?.getVideoTracks()[0] ?? null
-
-    const senderFor = (kind: 'audio' | 'video') => {
-      const withTrack = pc.getSenders().find((s) => s.track?.kind === kind)
-      if (withTrack) return withTrack
-      const empty = pc
-        .getTransceivers()
-        .find((t) => t.sender && !t.sender.track && t.receiver.track?.kind === kind)
-      if (empty) return empty.sender
-      // Fall back to transceiver order: [0]=audio, [1]=video from ensurePeerShell.
-      const idx = kind === 'audio' ? 0 : 1
-      return pc.getTransceivers()[idx]?.sender
-    }
-
-    const audioSender = senderFor('audio')
-    const videoSender = senderFor('video')
-    if (audioSender) void audioSender.replaceTrack(audioTrack)
+    const sender = this.findSender(pc, 'audio')
+    if (sender) void sender.replaceTrack(audioTrack)
     else if (audioTrack && stream) pc.addTrack(audioTrack, stream)
-    if (videoSender) void videoSender.replaceTrack(videoTrack)
-    else if (videoTrack && stream) pc.addTrack(videoTrack, stream)
   }
 
-  /** Replace outbound video track on all peers (camera ↔ screen) without renegotiation. */
+  private syncSenders(
+    pc: RTCPeerConnection,
+    stream: MediaStream | null,
+    videoTrack: MediaStreamTrack | null,
+  ) {
+    this.syncAudioSender(pc, stream)
+    const sender = this.findSender(pc, 'video')
+    if (sender) void sender.replaceTrack(videoTrack)
+    else if (videoTrack) {
+      const ms = stream ?? new MediaStream([videoTrack])
+      if (!stream) ms.addTrack(videoTrack)
+      pc.addTrack(videoTrack, ms)
+    }
+  }
+
+  /** Replace outbound video on every peer (camera ↔ screen ↔ placeholder). */
   async replaceVideoTrack(track: MediaStreamTrack | null) {
+    const next = track ?? this.videoTrackForSend(this.localStream)
+    if (track) {
+      try {
+        track.contentHint = track.getSettings().displaySurface ? 'detail' : 'motion'
+      } catch {
+        // ignore
+      }
+    }
+    this.outboundVideoTrack = next
     const tasks: Promise<void>[] = []
     for (const { pc } of this.peers.values()) {
-      const sender =
-        pc.getSenders().find((s) => s.track?.kind === 'video') ??
-        pc.getTransceivers()[1]?.sender
+      const sender = this.findSender(pc, 'video')
       if (sender) {
-        tasks.push(sender.replaceTrack(track).then(() => undefined))
+        tasks.push(
+          sender.replaceTrack(next).then(() => undefined).catch(() => undefined),
+        )
+      } else if (next) {
+        pc.addTrack(next, this.localStream ?? new MediaStream([next]))
       }
     }
     await Promise.all(tasks)
@@ -144,15 +209,11 @@ export class MeetingWebRTCManager {
       t.enabled = enabled
     })
     for (const { pc } of this.peers.values()) {
-      const sender = pc.getSenders().find((s) => s.track?.kind === 'audio')
+      const sender = this.findSender(pc, 'audio')
       if (sender?.track) sender.track.enabled = enabled
     }
   }
 
-  /**
-   * Sync mesh to the current remote participant ids.
-   * Rejects if total meeting size (self + remotes) would exceed MAX_MESH_PARTICIPANTS.
-   */
   async syncPeers(remoteParticipantIds: string[]): Promise<{ ok: boolean; error?: string }> {
     await this.refreshIceServers()
     const unique = [...new Set(remoteParticipantIds)].filter((id) => id && id !== this.selfId)
@@ -171,25 +232,35 @@ export class MeetingWebRTCManager {
       if (!this.peers.has(peerId) && this.shouldOffer(peerId)) {
         await this.createAndOffer(peerId)
       } else if (!this.peers.has(peerId)) {
-        // Polite side: wait for their offer; ensure we can receive ICE early.
-        this.ensurePeerShell(peerId)
+        this.ensurePeerShell(peerId, { addOutbound: true })
       }
     }
 
     return { ok: true }
   }
 
-  private ensurePeerShell(peerId: string): PeerConnection {
+  private ensurePeerShell(
+    peerId: string,
+    opts: { addOutbound: boolean },
+  ): PeerConnection {
     const existing = this.peers.get(peerId)
     if (existing) return existing
     const pc = new RTCPeerConnection({ iceServers: this.iceServers })
-    // Always create senders so later replaceTrack (camera ↔ screen) needs no renegotiation.
-    pc.addTransceiver('audio', { direction: 'sendrecv' })
-    pc.addTransceiver('video', { direction: 'sendrecv' })
     const peer: PeerConnection = { pc, peerId }
     this.peers.set(peerId, peer)
     this.wirePc(peer)
-    if (this.localStream) this.syncSenders(pc, this.localStream)
+
+    if (opts.addOutbound) {
+      const audio = this.localStream?.getAudioTracks()[0]
+      const video = this.outboundVideoTrack ?? this.videoTrackForSend(this.localStream)
+      this.outboundVideoTrack = video
+      if (audio && this.localStream) pc.addTrack(audio, this.localStream)
+      else pc.addTransceiver('audio', { direction: 'sendrecv' })
+      const videoStream = this.localStream ?? new MediaStream([video])
+      if (!this.localStream) videoStream.addTrack(video)
+      pc.addTrack(video, videoStream)
+    }
+
     return peer
   }
 
@@ -202,12 +273,35 @@ export class MeetingWebRTCManager {
     }
 
     pc.ontrack = (ev) => {
-      const stream = ev.streams[0] ?? new MediaStream([ev.track])
-      this.onRemoteStream?.(peerId, stream)
+      let stream = this.remoteStreams.get(peerId)
+      if (!stream) {
+        stream = ev.streams[0] ?? new MediaStream()
+        this.remoteStreams.set(peerId, stream)
+      }
+      // Merge tracks into a stable MediaStream so replaceTrack updates stay attached to the tile.
+      if (!stream.getTracks().some((t) => t.id === ev.track.id)) {
+        // Drop old same-kind tracks (camera → screen replace can deliver a new track).
+        stream.getTracks().forEach((t) => {
+          if (t.kind === ev.track.kind) {
+            stream!.removeTrack(t)
+          }
+        })
+        stream.addTrack(ev.track)
+      }
+
+      const publish = () => this.onRemoteStream?.(peerId, stream!)
+      publish()
+      ev.track.onunmute = publish
+      ev.track.onmute = publish
+      ev.track.onended = () => {
+        stream?.removeTrack(ev.track)
+        publish()
+      }
     }
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        this.remoteStreams.delete(peerId)
         this.onRemoteStream?.(peerId, null)
       }
     }
@@ -217,9 +311,7 @@ export class MeetingWebRTCManager {
     if (this.makingOffer.has(peerId)) return
     this.makingOffer.add(peerId)
     try {
-      const peer = this.ensurePeerShell(peerId)
-      if (this.localStream) this.syncSenders(peer.pc, this.localStream)
-
+      const peer = this.ensurePeerShell(peerId, { addOutbound: true })
       const offer = await peer.pc.createOffer()
       await peer.pc.setLocalDescription(offer)
       this.emitSignal('meeting-offer', peerId, { sdp: peer.pc.localDescription })
@@ -233,11 +325,32 @@ export class MeetingWebRTCManager {
   private async handleOffer(msg: SignalMessage) {
     const payload = msg.payload as { sdp: RTCSessionDescriptionInit }
     const peerId = msg.senderParticipantId
-    const peer = this.ensurePeerShell(peerId)
-    if (this.localStream) this.syncSenders(peer.pc, this.localStream)
+    // Answerer: set remote description first so m-lines align, then attach local tracks.
+    let peer = this.peers.get(peerId)
+    if (!peer) {
+      const pc = new RTCPeerConnection({ iceServers: this.iceServers })
+      peer = { pc, peerId }
+      this.peers.set(peerId, peer)
+      this.wirePc(peer)
+    }
 
     await peer.pc.setRemoteDescription(payload.sdp)
     await this.flushCandidates(peerId, peer.pc)
+
+    const audio = this.localStream?.getAudioTracks()[0] ?? null
+    const video = this.outboundVideoTrack ?? this.videoTrackForSend(this.localStream)
+    this.outboundVideoTrack = video
+
+    const audioSender = this.findSender(peer.pc, 'audio')
+    const videoSender = this.findSender(peer.pc, 'video')
+    if (audioSender) await audioSender.replaceTrack(audio)
+    else if (audio && this.localStream) peer.pc.addTrack(audio, this.localStream)
+
+    if (videoSender) await videoSender.replaceTrack(video)
+    else {
+      const vs = this.localStream ?? new MediaStream([video])
+      peer.pc.addTrack(video, vs)
+    }
 
     const answer = await peer.pc.createAnswer()
     await peer.pc.setLocalDescription(answer)
@@ -291,6 +404,7 @@ export class MeetingWebRTCManager {
     }
     this.peers.delete(peerId)
     this.pendingCandidates.delete(peerId)
+    this.remoteStreams.delete(peerId)
     this.onRemoteStream?.(peerId, null)
   }
 
@@ -299,6 +413,9 @@ export class MeetingWebRTCManager {
     this.socket?.off('meeting-offer')
     this.socket?.off('meeting-answer')
     this.socket?.off('meeting-ice-candidate')
+    this.placeholderVideoTrack?.stop()
+    this.placeholderVideoTrack = null
+    this.outboundVideoTrack = null
     this.localStream = null
     this.selfId = null
   }
