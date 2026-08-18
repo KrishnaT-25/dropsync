@@ -28,4 +28,6 @@ const roomHistorySchema = new Schema<RoomHistoryDocument>(
   },
 )
 
-export const RoomHistory = mongoose.model<RoomHistoryDocument>('RoomHistory', roomHistorySchema)
+export const RoomHistory =
+  (mongoose.models.RoomHistory as mongoose.Model<RoomHistoryDocument> | undefined) ??
+  mongoose.model<RoomHistoryDocument>('RoomHistory', roomHistorySchema)

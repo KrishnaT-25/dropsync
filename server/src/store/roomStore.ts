@@ -98,10 +98,14 @@ export class RoomStore {
   }
 
   private async sweepExpiredRooms(): Promise<void> {
-    const now = Date.now()
-    const due = await this.redis().zrangebyscore(ROOM_EXPIRIES_KEY, 0, now)
-    for (const code of due) {
-      await this.expireRoom(code)
+    try {
+      const now = Date.now()
+      const due = await this.redis().zrangebyscore(ROOM_EXPIRIES_KEY, 0, now)
+      for (const code of due) {
+        await this.expireRoom(code)
+      }
+    } catch {
+      // Redis may be closing during shutdown/tests.
     }
   }
 

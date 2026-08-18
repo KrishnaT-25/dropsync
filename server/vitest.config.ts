@@ -9,5 +9,7 @@ export default defineConfig({
     hookTimeout: 30_000,
     fileParallelism: false,
     pool: 'forks',
+    // Pollers / Redis clients can keep the worker alive after assertions finish.
+    forceExit: true,
   },
 })

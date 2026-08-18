@@ -64,5 +64,33 @@ jobs:
       - name: Build server
         run: npm run build --prefix server
 
+      - name: Wait for Redis
+        working-directory: server
+        run: |
+          node --input-type=module -e "
+          import { Redis } from 'ioredis';
+          const r = new Redis(process.env.REDIS_URL);
+          const tryPing = async (n) => {
+            for (let i = 0; i < n; i++) {
+              try {
+                await r.ping();
+                console.log('Redis is ready');
+                await r.quit();
+                return;
+              } catch {
+                await new Promise((res) => setTimeout(res, 1000));
+              }
+            }
+            console.error('Redis did not become ready');
+            process.exit(1);
+          };
+          await tryPing(30);
+          "
+
       - name: Test server
         run: npm test --prefix server
+        env:
+          REDIS_URL: redis://127.0.0.1:6379
+          MONGODB_URI: mongodb://127.0.0.1:27017/dropsync-ci
+          CLIENT_ORIGIN: http://localhost:5173
+          ROOM_DURATION_SECONDS: '300'

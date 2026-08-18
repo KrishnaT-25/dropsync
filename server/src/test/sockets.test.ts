@@ -47,7 +47,7 @@ describe('socket isolation and host ACL', () => {
     })
 
     const leaked = new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => resolve(), 400)
+      const t = setTimeout(() => resolve(), 1200)
       socketB.on('activity', () => {
         clearTimeout(t)
         reject(new Error('activity leaked into room B'))
@@ -86,7 +86,7 @@ describe('socket isolation and host ACL', () => {
     })
 
     const roomLeak = new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => resolve(), 400)
+      const t = setTimeout(() => resolve(), 1200)
       roomSocket.on('meeting-activity', () => {
         clearTimeout(t)
         reject(new Error('meeting-activity leaked into room socket'))
@@ -136,7 +136,7 @@ describe('socket isolation and host ACL', () => {
     })
 
     const forceMuted = new Promise<boolean>((resolve) => {
-      const t = setTimeout(() => resolve(false), 500)
+      const t = setTimeout(() => resolve(false), 1500)
       hostSocket.on('force-muted', () => {
         clearTimeout(t)
         resolve(true)

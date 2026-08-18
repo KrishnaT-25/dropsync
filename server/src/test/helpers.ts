@@ -5,6 +5,7 @@ import request from 'supertest'
 import { createApp } from '../app.js'
 import { connectRedis, disconnectRedis, getRedis } from '../db/redis.js'
 import { createSocketServer } from '../socket/index.js'
+import { roomStore } from '../store/roomStore.js'
 import type { Server } from 'socket.io'
 
 export interface TestHarness {
@@ -45,6 +46,7 @@ export async function stopTestServer(): Promise<void> {
   if (refCount > 0 || !harness) return
   const current = harness
   harness = null
+  roomStore.stopExpiryPoller()
   await new Promise<void>((resolve) => {
     current.io.close(() => resolve())
   })
