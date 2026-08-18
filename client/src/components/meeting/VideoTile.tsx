@@ -15,9 +15,14 @@ export function VideoTile({ tile, videoRef }: VideoTileProps) {
     const video = ref.current
     if (!video) return
     video.srcObject = tile.stream ?? null
+    if (tile.stream) {
+      void video.play().catch(() => {
+        // ignore autoplay rejection
+      })
+    }
   }, [tile.stream, ref])
 
-  const showPlaceholder = !tile.stream || tile.isCameraOff
+  const showPlaceholder = !tile.stream || Boolean(tile.isCameraOff)
 
   return (
     <div
@@ -27,16 +32,16 @@ export function VideoTile({ tile, videoRef }: VideoTileProps) {
         borderColor: 'var(--border)',
       }}
     >
-      {!showPlaceholder ? (
-        <video
-          ref={ref}
-          autoPlay
-          playsInline
-          muted={tile.isYou}
-          className="h-full w-full object-cover"
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">
+      <video
+        ref={ref}
+        autoPlay
+        playsInline
+        muted={tile.isYou}
+        className={`h-full w-full object-cover ${showPlaceholder ? 'hidden' : 'block'}`}
+      />
+
+      {showPlaceholder && (
+        <div className="absolute inset-0 flex h-full w-full items-center justify-center">
           <div
             className="flex h-14 w-14 items-center justify-center rounded-full"
             style={{ background: 'rgba(79, 209, 197, 0.15)' }}
@@ -53,8 +58,7 @@ export function VideoTile({ tile, videoRef }: VideoTileProps) {
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2">
         <div className="flex items-center justify-between gap-2">
           <span className="truncate text-xs font-medium text-white">
-            {tile.name}
-            {tile.isYou ? ' (You)' : ''}
+            {tile.isYou ? 'You' : tile.name}
           </span>
           <div className="flex items-center gap-1.5">
             {tile.isMuted && <MicOff className="h-3.5 w-3.5 text-red-400" />}

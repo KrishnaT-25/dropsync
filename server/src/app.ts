@@ -8,6 +8,9 @@ import { getTransferStats } from './services/transferStats.js'
 export function createApp() {
   const app = express()
 
+  // Render / reverse proxies terminate TLS; needed for correct https download URLs.
+  app.set('trust proxy', 1)
+
   app.use(
     cors({
       origin: config.clientOrigin,

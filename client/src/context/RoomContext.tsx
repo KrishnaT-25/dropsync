@@ -187,30 +187,33 @@ export function RoomProvider({ children }: { children: ReactNode }) {
 
       setRoom((prev) => {
         if (!prev) return prev
-        return {
+        const next = {
           ...prev,
           activities: mergeActivity(prev.activities, mapped),
         }
-      })
 
-      const transferId = mapped.fileMeta?.transferId
-      if (
-        mapped.type === 'file' &&
-        transferId &&
-        mapped.senderId === pid &&
-        pendingFilesRef.current.has(transferId)
-      ) {
-        const file = pendingFilesRef.current.get(transferId)!
-        pendingFilesRef.current.delete(transferId)
-        const recipients =
-          roomRef.current?.participants.filter((p) => p.id !== pid).map((p) => p.id) ?? []
-        void fileTransferManager.sendFileToPeers({
-          file,
-          transferId,
-          activityId: mapped.id,
-          recipientIds: recipients,
-        })
-      }
+        const transferId = mapped.fileMeta?.transferId
+        if (
+          mapped.type === 'file' &&
+          transferId &&
+          mapped.senderId === pid &&
+          pendingFilesRef.current.has(transferId)
+        ) {
+          const file = pendingFilesRef.current.get(transferId)!
+          pendingFilesRef.current.delete(transferId)
+          const recipients = next.participants.filter((p) => p.id !== pid).map((p) => p.id)
+          queueMicrotask(() => {
+            void fileTransferManager.sendFileToPeers({
+              file,
+              transferId,
+              activityId: mapped.id,
+              recipientIds: recipients,
+            })
+          })
+        }
+
+        return next
+      })
     }
 
     const handleExpired = () => {

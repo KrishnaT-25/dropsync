@@ -1,12 +1,15 @@
 import { Video } from 'lucide-react'
 import { useMeeting } from '../../context/MeetingContext'
+import { useRoom } from '../../context/RoomContext'
 import { MeetingControls } from './MeetingControls'
 import { VideoTile } from './VideoTile'
 
 export function MeetingPanel() {
+  const { room } = useRoom()
   const { isActive, error, tiles, localVideoRef, startMeeting } = useMeeting()
 
   if (!isActive) {
+    const peerStarted = Boolean(room?.meetingActive)
     return (
       <div
         className="mb-4 rounded-2xl border p-4 sm:p-5"
@@ -24,7 +27,9 @@ export function MeetingPanel() {
               Meeting
             </p>
             <p className="text-sm sm:text-[15px]" style={{ color: 'var(--text-secondary)' }}>
-              Start a video call to discuss files, notes, and shared content without leaving the room.
+              {peerStarted
+                ? 'A meeting is in progress. Join to enable your camera and microphone.'
+                : 'Start a video call to discuss files, notes, and shared content without leaving the room.'}
             </p>
           </div>
           <button
@@ -35,7 +40,7 @@ export function MeetingPanel() {
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-[#0b0e11] transition hover:bg-accent-hover active:scale-[0.98]"
           >
             <Video className="h-4 w-4" />
-            Start meeting
+            {peerStarted ? 'Join meeting' : 'Start meeting'}
           </button>
         </div>
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}

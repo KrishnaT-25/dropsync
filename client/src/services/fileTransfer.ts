@@ -3,7 +3,7 @@ import { getIceServers, recordTransferStat, uploadFallbackFile } from './api'
 
 const CHUNK_SIZE = 16 * 1024
 const BUFFER_LOW = 256 * 1024
-const CONNECT_TIMEOUT_MS = 10_000
+const CONNECT_TIMEOUT_MS = 20_000
 
 export type TransferPath = 'direct' | 'relay' | 'storage'
 export type TransferStatus = 'pending' | 'transferring' | 'complete' | 'failed'
@@ -252,6 +252,9 @@ export class FileTransferManager {
         file,
       })
 
+      // Give the peer a moment to receive the final control message before tearing down.
+      await new Promise((r) => setTimeout(r, 250))
+
       const path: TransferPath = peer.usedRelay ? 'relay' : 'direct'
       this.closeOutgoing(mapKey)
       return { ok: true, path }
@@ -301,6 +304,29 @@ export class FileTransferManager {
     })
   }
 
+  private waitForBufferLow(channel: RTCDataChannel): Promise<void> {
+    if (channel.bufferedAmount <= BUFFER_LOW) return Promise.resolve()
+    return new Promise((resolve) => {
+      const timer = window.setTimeout(() => {
+        channel.removeEventListener('bufferedamountlow', onLow)
+        resolve()
+      }, 5_000)
+      const onLow = () => {
+        window.clearTimeout(timer)
+        channel.removeEventListener('bufferedamountlow', onLow)
+        resolve()
+      }
+      channel.addEventListener('bufferedamountlow', onLow)
+    })
+  }
+
+  private async drainChannel(channel: RTCDataChannel) {
+    const start = Date.now()
+    while (channel.bufferedAmount > 0 && Date.now() - start < 15_000) {
+      await new Promise((r) => setTimeout(r, 40))
+    }
+  }
+
   private async pushFileOverChannel(
     channel: RTCDataChannel,
     opts: { transferId: string; activityId: string; file: File },
@@ -319,20 +345,16 @@ export class FileTransferManager {
     const totalChunks = Math.ceil(buffer.byteLength / CHUNK_SIZE) || 1
 
     for (let i = 0; i < totalChunks; i++) {
+      if (channel.readyState !== 'open') {
+        throw new Error('Data channel closed during transfer')
+      }
       while (channel.bufferedAmount > BUFFER_LOW) {
-        await new Promise<void>((resolve) => {
-          const onLow = () => {
-            channel.removeEventListener('bufferedamountlow', onLow)
-            resolve()
-          }
-          channel.addEventListener('bufferedamountlow', onLow)
-        })
+        await this.waitForBufferLow(channel)
       }
 
       const start = i * CHUNK_SIZE
       const end = Math.min(start + CHUNK_SIZE, buffer.byteLength)
       const slice = buffer.slice(start, end)
-      // Prefix 4-byte big-endian chunk index
       const packet = new Uint8Array(4 + slice.byteLength)
       const view = new DataView(packet.buffer)
       view.setUint32(0, i)
@@ -355,6 +377,7 @@ export class FileTransferManager {
       totalChunks,
     }
     channel.send(JSON.stringify(done))
+    await this.drainChannel(channel)
   }
 
   private async handleOffer(msg: FileSignalMessage) {
@@ -377,7 +400,7 @@ export class FileTransferManager {
       const channel = ev.channel
       channel.binaryType = 'arraybuffer'
       channel.onmessage = (message) => {
-        void this.onIncomingMessage(message.data, msg.senderParticipantId, pc)
+        void this.onIncomingMessage(message.data as ArrayBuffer | Blob | string, msg.senderParticipantId, pc)
       }
       channel.onclose = () => {
         const state = this.incoming.get(transferId)
@@ -388,7 +411,7 @@ export class FileTransferManager {
     }
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+      if (pc.connectionState === 'failed') {
         const state = this.incoming.get(transferId)
         if (state && state.received < state.fileSize) {
           this.failIncoming(transferId, 'Connection lost')
@@ -422,39 +445,56 @@ export class FileTransferManager {
     const peer = this.outgoing.get(this.key(payload.transferId, msg.senderParticipantId))
     if (!peer) return
     await peer.pc.setRemoteDescription(payload.sdp)
+
+    const qKey = this.key(payload.transferId, msg.senderParticipantId)
+    const queued = this.pendingCandidates.get(qKey) ?? []
+    for (const c of queued) {
+      try {
+        await peer.pc.addIceCandidate(c)
+      } catch {
+        // ignore
+      }
+    }
+    this.pendingCandidates.delete(qKey)
   }
 
   private async handleRemoteCandidate(msg: FileSignalMessage) {
     const candidate = msg.payload as RTCIceCandidateInit
-    // Try outgoing first (answer side sends to offerer)
+
     for (const [k, peer] of this.outgoing) {
-      if (peer.peerId === msg.senderParticipantId) {
-        try {
-          await peer.pc.addIceCandidate(candidate)
-        } catch {
-          // ignore
-        }
-        if (candidate.candidate?.includes(' typ relay ')) peer.usedRelay = true
+      if (peer.peerId !== msg.senderParticipantId) continue
+      if (!peer.pc.remoteDescription) {
+        const list = this.pendingCandidates.get(k) ?? []
+        list.push(candidate)
+        this.pendingCandidates.set(k, list)
         return
       }
-      void k
+      try {
+        await peer.pc.addIceCandidate(candidate)
+      } catch {
+        // ignore
+      }
+      if (candidate.candidate?.includes(' typ relay ')) peer.usedRelay = true
+      return
     }
 
-    // Incoming: may arrive before remote description is set
     const transferHint = [...this.incoming.values()].find((s) => s.peerId === msg.senderParticipantId)
     if (transferHint) {
-      try {
-        await transferHint.pc.addIceCandidate(candidate)
-      } catch {
-        const qKey = this.key(transferHint.transferId, msg.senderParticipantId)
+      if (!transferHint.pc.remoteDescription) {
+        const qKey = `pending:${msg.senderParticipantId}`
         const list = this.pendingCandidates.get(qKey) ?? []
         list.push(candidate)
         this.pendingCandidates.set(qKey, list)
+        return
+      }
+      try {
+        await transferHint.pc.addIceCandidate(candidate)
+      } catch {
+        // ignore
       }
       return
     }
 
-    // Queue under unknown transfer until offer arrives — use peer-only key bucket
     const qKey = `pending:${msg.senderParticipantId}`
     const list = this.pendingCandidates.get(qKey) ?? []
     list.push(candidate)
@@ -462,10 +502,14 @@ export class FileTransferManager {
   }
 
   private async onIncomingMessage(
-    data: ArrayBuffer | string,
+    data: ArrayBuffer | Blob | string,
     peerId: string,
     pc: RTCPeerConnection,
   ) {
+    if (data instanceof Blob) {
+      data = await data.arrayBuffer()
+    }
+
     if (typeof data === 'string') {
       let msg: ControlMessage
       try {

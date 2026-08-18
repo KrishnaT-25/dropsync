@@ -35,7 +35,9 @@ export function ParticipantsList({
                   participant.inMeeting ? 'bg-red-500' : 'bg-accent'
                 }`}
               />
-              <span className="truncate">{participant.name}</span>
+              <span className="truncate">
+                {participant.isYou ? 'You' : participant.name === 'You' ? 'Host' : participant.name}
+              </span>
             </div>
 
             {meetingActive && participant.inMeeting && (

@@ -41,9 +41,13 @@ transfersRouter.post('/upload', async (req, res, next) => {
     const stored = await storeFallbackFile({ buffer, fileName, mimeType })
     recordTransfer('storage')
 
+    const forwardedProto = String(req.get('x-forwarded-proto') ?? '')
+      .split(',')[0]
+      ?.trim()
+    const protocol = forwardedProto === 'https' || forwardedProto === 'http' ? forwardedProto : req.protocol
     const downloadUrl = stored.downloadUrl.startsWith('http')
       ? stored.downloadUrl
-      : `${req.protocol}://${req.get('host')}${stored.downloadUrl}`
+      : `${protocol}://${req.get('host')}${stored.downloadUrl}`
 
     res.status(201).json({
       transferId: stored.transferId,

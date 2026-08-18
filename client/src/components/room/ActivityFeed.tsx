@@ -28,7 +28,13 @@ function formatMeetingContent(item: ActivityItem, selfParticipantId?: string | n
   return `${actorLabel(item, selfParticipantId)} ${action}`
 }
 
-function FileRow({ item }: { item: ActivityItem }) {
+function FileRow({
+  item,
+  selfParticipantId,
+}: {
+  item: ActivityItem
+  selfParticipantId?: string | null
+}) {
   const meta = item.fileMeta
   if (!meta) return null
 
@@ -53,7 +59,9 @@ function FileRow({ item }: { item: ActivityItem }) {
       }}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-xs font-medium text-accent">{item.sender} · file</span>
+        <span className="text-xs font-medium text-accent">
+          {actorLabel(item, selfParticipantId)} · file
+        </span>
         <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
           {formatTime(item.timestamp)}
         </span>
@@ -147,7 +155,7 @@ function ActivityRow({
   }
 
   if (item.type === 'file') {
-    return <FileRow item={item} />
+    return <FileRow item={item} selfParticipantId={selfParticipantId} />
   }
 
   if (item.type === 'clipboard') {

@@ -116,7 +116,7 @@ export class RoomStore {
         code,
         createdAt: now.toISOString(),
         expiresAt: expiresAt.toISOString(),
-        participants: [{ id: participantId, name: 'You' }],
+        participants: [{ id: participantId, name: 'Host' }],
         activities: [
           createActivity('system', 'Room created — share the code or QR to invite others'),
         ],
