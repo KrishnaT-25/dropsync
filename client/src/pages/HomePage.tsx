@@ -2,8 +2,7 @@ import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { Header } from '../components/layout/Header'
-import { RoomTabs } from '../components/home/RoomTabs'
-import { VideoCallTabs } from '../components/home/VideoCallTabs'
+import { EntryTabs } from '../components/home/EntryTabs'
 import { useRoom } from '../context/RoomContext'
 import { isValidMeetingCode, normalizeMeetingCode } from '../utils/meetingCode'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode'
@@ -59,7 +58,7 @@ export function HomePage() {
             Drop into a room.
           </h1>
           <p className="mx-auto max-w-lg text-sm leading-relaxed sm:text-base" style={{ color: 'var(--text-secondary)' }}>
-            Share files, text, links, and code across devices — or start a standalone video call.
+            Share files, text, links, and code — or hop into a video meet. One place to start.
           </p>
 
           <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
@@ -79,11 +78,10 @@ export function HomePage() {
           </div>
         </div>
 
-        <RoomTabs />
-        <VideoCallTabs />
+        <EntryTabs />
 
         <p className="mt-8 text-center text-xs sm:text-sm" style={{ color: 'var(--text-muted)' }}>
-          No account needed. Rooms expire automatically.
+          No account needed. Rooms and meets expire automatically.
         </p>
       </main>
     </AppShell>
