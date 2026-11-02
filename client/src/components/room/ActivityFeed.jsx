@@ -201,9 +201,9 @@ function ActivityRow({
   );
 }
 function ActivityFeed({ activities, selfParticipantId, onDownload, title = "Activity" }) {
-  const bottomRef = useRef(null);
+  const feedRef = useRef(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight;
   }, [activities.length]);
   return /* @__PURE__ */ jsxs("div", { className: "flex min-h-0 flex-1 flex-col", children: [
     /* @__PURE__ */ jsx(
@@ -214,9 +214,8 @@ function ActivityFeed({ activities, selfParticipantId, onDownload, title = "Acti
         children: title
       }
     ),
-    /* @__PURE__ */ jsxs("div", { className: "min-h-0 flex-1 space-y-3 overflow-y-auto pr-1", children: [
-      activities.length === 0 ? /* @__PURE__ */ jsx("div", { className: "flex h-full min-h-[160px] items-center justify-center", children: /* @__PURE__ */ jsx("p", { className: "text-center text-sm", style: { color: "var(--text-muted)" }, children: "Share text, links, files, clipboard, or code while you collaborate." }) }) : activities.map((item) => /* @__PURE__ */ jsx(ActivityRow, { item, selfParticipantId, onDownload }, item.id)),
-      /* @__PURE__ */ jsx("div", { ref: bottomRef })
+    /* @__PURE__ */ jsxs("div", { ref: feedRef, className: "min-h-0 flex-1 space-y-3 overflow-y-auto pr-1", children: [
+      activities.length === 0 ? /* @__PURE__ */ jsx("div", { className: "flex h-full min-h-[160px] items-center justify-center", children: /* @__PURE__ */ jsx("p", { className: "text-center text-sm", style: { color: "var(--text-muted)" }, children: "Share text, links, files, clipboard, or code while you collaborate." }) }) : activities.map((item) => /* @__PURE__ */ jsx(ActivityRow, { item, selfParticipantId, onDownload }, item.id))
     ] })
   ] });
 }

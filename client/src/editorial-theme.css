@@ -381,3 +381,23 @@ html:root .ds-workspace input::placeholder, html:root .ds-workspace textarea::pl
   html:root .ds-panel-header h1 { font-size: 27px; }
   html:root .ds-form-card { padding: 22px 18px; }
 }
+
+/* Keep the room chrome fixed while the conversation itself scrolls. */
+html:root .ds-room-shell { height: 100dvh; min-height: 0; overflow: hidden; }
+html:root .ds-room-shell .ds-app-inner { height: 100%; min-height: 0; }
+html:root .ds-room-shell .ds-header { flex-shrink: 0; }
+html:root .ds-room-shell .ds-dashboard { flex: 1; min-height: 0; }
+html:root .ds-room-shell .ds-sidebar { min-height: 0; overflow-y: auto; }
+html:root .ds-room-shell .ds-workspace { flex: 1; min-height: 0; overflow-y: auto; }
+html:root .ds-room-shell .ds-workspace-chat { overflow: hidden; }
+html:root .ds-room-shell .ds-panel-header,
+html:root .ds-room-shell .ds-recovery-banner,
+html:root .ds-room-shell .ds-workspace-chat > .mt-4 { flex-shrink: 0; }
+html:root .ds-room-shell .ds-chat-content,
+html:root .ds-room-shell .ds-code-content,
+html:root .ds-room-shell .ds-chat-content > div,
+html:root .ds-room-shell .ds-code-content > div { min-height: 0; }
+
+@media (max-width: 650px) {
+  html:root .ds-room-shell .ds-sidebar { flex-shrink: 0; }
+}

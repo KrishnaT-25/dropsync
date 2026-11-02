@@ -1,6 +1,6 @@
 import { jsx, jsxs } from "react/jsx-runtime";
-function AppShell({ children, centered = false }) {
-  return /* @__PURE__ */ jsxs("div", { className: "ds-app-shell relative min-h-screen", style: { background: "var(--bg)" }, children: [
+function AppShell({ children, centered = false, roomLayout = false }) {
+  return /* @__PURE__ */ jsxs("div", { className: `ds-app-shell relative min-h-screen${roomLayout ? " ds-room-shell" : ""}`, style: { background: "var(--bg)" }, children: [
     /* @__PURE__ */ jsx(
       "div",
       {
