@@ -101,7 +101,7 @@ function MeetingContent() {
           onJoin: async (displayName) => {
             setJoining(true);
             try {
-              if (!hostPrepared) {
+              if (!hostPrepared && !participantId) {
                 const guest = await joinAsGuest(code, displayName);
                 if (!guest.ok) return guest;
               }

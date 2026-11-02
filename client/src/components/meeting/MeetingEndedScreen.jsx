@@ -2,7 +2,7 @@ import { jsx, jsxs } from "react/jsx-runtime";
 import { useNavigate } from "react-router-dom";
 function MeetingEndedScreen({ reason }) {
   const navigate = useNavigate();
-  const message = reason === "removed" ? "You were removed from the meeting by the host." : reason === "host_ended" ? "The meeting was ended by the host." : reason === "host_left" ? "The host left \u2014 this meeting has ended." : "You left the meeting.";
+  const message = reason === "denied" ? "A moderator declined your request to join." : reason === "removed" ? "You were removed from the meeting by a moderator." : reason === "host_ended" ? "The meeting was ended by the host." : reason === "host_left" ? "The host left \u2014 this meeting has ended." : "You left the meeting.";
   return /* @__PURE__ */ jsxs(
     "div",
     {

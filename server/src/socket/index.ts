@@ -10,7 +10,8 @@ import {
   clientIpFromSocket,
 } from '../services/rateLimit.js'
 import { roomStore } from '../store/roomStore.js'
-import type { ActivityItem } from '../types.js'
+import { waitingParticipants } from '../store/meetingStore.js'
+import type { ActivityItem, MeetingRecord } from '../types.js'
 import { toPublicRoom } from '../utils/publicRoom.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
 import { registerMeetingSocketHandlers } from './meetings.js'
@@ -58,6 +59,13 @@ export function broadcastRoomActivity(code: string, item: ActivityItem): void {
 }
 export function broadcastRoomState(code: string, room: ReturnType<typeof toPublicRoom>): void {
   roomIo?.to(code).emit('room-state', room)
+}
+export function broadcastMeetingWaiting(meeting: MeetingRecord): void {
+  for (const person of meeting.participants) {
+    if (person.admitted && (person.isHost || person.isCoHost) && person.socketId) {
+      roomIo?.to(person.socketId).emit('meeting-waiting', waitingParticipants(meeting))
+    }
+  }
 }
 
 export function createSocketServer(

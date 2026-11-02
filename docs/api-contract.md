@@ -91,18 +91,21 @@ Create a standalone video meeting. Creator is recorded as host.
     "hostParticipantId": "550e8400-e29b-41d4-a716-446655440000",
     "createdAt": "2026-08-18T14:00:00.000Z",
     "expiresAt": "2026-08-18T22:00:00.000Z",
+    "permissions": { "requireAdmission": true, "allowScreenShare": true, "allowParticipantUnmute": true },
     "participants": [
       {
         "id": "550e8400-e29b-41d4-a716-446655440000",
         "name": "Host",
         "isHost": true,
+        "isCoHost": false,
         "isMuted": false,
         "isCameraOff": false,
         "isScreenSharing": false
       }
     ]
   },
-  "participantId": "550e8400-e29b-41d4-a716-446655440000"
+  "participantId": "550e8400-e29b-41d4-a716-446655440000",
+  "accessToken": "random-participant-token"
 }
 ```
 
@@ -137,9 +140,12 @@ Create a standalone video meeting. Creator is recorded as host.
 ```json
 {
   "meeting": { "...": "PublicMeetingRecord" },
-  "participantId": "uuid"
+  "participantId": "uuid",
+  "accessToken": "random-participant-token"
 }
 ```
+
+The token is private to that participant and is required when joining the meeting socket. When admission is required, REST join reserves a place but omits the waiting participant from the public roster until a moderator admits them.
 
 ---
 
@@ -171,7 +177,8 @@ Create a standalone video meeting. Creator is recorded as host.
 | `code` | string | Meeting code |
 | `hostParticipantId` | string (uuid) | Host participant id |
 | `createdAt` / `expiresAt` | string (ISO) | Lifetime |
-| `participants` | array | `{ id, name, isHost, isMuted, isCameraOff, isScreenSharing }` |
+| `permissions` | object | Admission, participant screen sharing, and participant unmute settings |
+| `participants` | array | Admitted members only: `{ id, name, isHost, isCoHost, isMuted, isCameraOff, isScreenSharing }` |
 
 ### `ActivityItem`
 

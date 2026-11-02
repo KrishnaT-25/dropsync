@@ -6,6 +6,7 @@ import { useMeetingSession } from "../../context/MeetingSessionContext";
 import { buildMeetingLink, formatMeetingCode } from "../../utils/meetingCode";
 import { HostParticipantMenu } from "./HostParticipantMenu";
 import { MeetingControls } from "./MeetingControls";
+import { MeetingModerationPanel } from "./MeetingModerationPanel";
 import { FullscreenExitHint, VideoTile } from "./VideoTile";
 function pickScreenStage(tiles) {
   const localScreen = tiles.find((t) => t.id === "screen-you" && t.stream);
@@ -79,7 +80,7 @@ function MeetingPanel() {
       videoRef: tile.id === "screen-you" ? screenVideoRef : tile.isYou && tile.id !== "screen-you" ? localVideoRef : void 0,
       isBrowserFullscreen: size === "stage" ? browserFs : void 0,
       onToggleFullscreen: size === "stage" ? () => void toggleFullscreen() : void 0,
-      hostMenu: !tile.isYou && tile.id !== "screen-you" ? /* @__PURE__ */ jsx(HostParticipantMenu, { participantId: tile.id, participantName: tile.name }) : void 0
+              hostMenu: !tile.isYou && tile.id !== "screen-you" ? /* @__PURE__ */ jsx(HostParticipantMenu, { participantId: tile.id, participantName: tile.name, isCoHost: tile.isCoHost, targetIsHost: tile.isHost }) : void 0
     },
     tile.id
   );
@@ -121,6 +122,7 @@ function MeetingPanel() {
             ] })
           ] })
         ] }),
+        <MeetingModerationPanel key="moderation" />,
         stageTile ? /* @__PURE__ */ jsxs("div", { className: "mb-3 flex flex-col gap-3 sm:mb-4", children: [
           /* @__PURE__ */ jsxs(
             "div",

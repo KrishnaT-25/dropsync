@@ -20,7 +20,9 @@ function MeetingProvider({ children }) {
     meeting,
     participantId,
     isJoined,
+    exitReason,
     isHost,
+    isModerator,
     leaveCall,
     endCallForEveryone,
     emitMediaState,
@@ -29,6 +31,8 @@ function MeetingProvider({ children }) {
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const canShareScreen = Boolean(isModerator || meeting?.permissions?.allowScreenShare !== false);
+  const canUnmute = Boolean(isModerator || meeting?.permissions?.allowParticipantUnmute !== false);
   const [error, setError] = useState(null);
   const [streamVersion, setStreamVersion] = useState(0);
   const [previewStream, setPreviewStream] = useState(null);
@@ -71,6 +75,9 @@ function MeetingProvider({ children }) {
     setIsScreenSharing(false);
     setStreamVersion((v) => v + 1);
   }, [attachStream]);
+  useEffect(() => {
+    if (exitReason) stopPreview();
+  }, [exitReason, stopPreview]);
   useEffect(() => {
     return () => {
       meetingWebRTC.dispose();
@@ -185,6 +192,7 @@ function MeetingProvider({ children }) {
     stopPreview();
   }, [emitActivity, endCallForEveryone, isHost, leaveCall, stopPreview]);
   const toggleMute = useCallback(() => {
+    if (isMuted && !canUnmute) return;
     if (!localStreamRef.current?.getAudioTracks().length) {
       void ensurePreview();
       return;
@@ -196,7 +204,7 @@ function MeetingProvider({ children }) {
     meetingWebRTC.setAudioEnabled(!next);
     setIsMuted(next);
     emitMediaState({ isMuted: next });
-  }, [emitMediaState, ensurePreview, isMuted]);
+  }, [canUnmute, emitMediaState, ensurePreview, isMuted]);
   const toggleCamera = useCallback(() => {
     if (!localStreamRef.current?.getVideoTracks().length) {
       void ensurePreview().then((stream) => {
@@ -223,6 +231,7 @@ function MeetingProvider({ children }) {
     await meetingWebRTC.replaceVideoTrack(cam);
   }, [isCameraOff]);
   const toggleScreenShare = useCallback(async () => {
+    if (!isScreenSharing && !canShareScreen) return;
     if (isScreenSharing) {
       stopStream(screenStreamRef.current);
       screenStreamRef.current = null;
@@ -264,7 +273,17 @@ function MeetingProvider({ children }) {
     } catch {
       setError("Screen sharing was cancelled or blocked.");
     }
-  }, [attachStream, emitActivity, emitMediaState, isScreenSharing, restoreCameraVideoTrack]);
+  }, [attachStream, canShareScreen, emitActivity, emitMediaState, isScreenSharing, restoreCameraVideoTrack]);
+  useEffect(() => {
+    if (!isJoined || canUnmute || isMuted) return;
+    localStreamRef.current?.getAudioTracks().forEach((track) => { track.enabled = false; });
+    meetingWebRTC.setAudioEnabled(false);
+    setIsMuted(true);
+    emitMediaState({ isMuted: true });
+  }, [canUnmute, emitMediaState, isJoined, isMuted]);
+  useEffect(() => {
+    if (isJoined && !canShareScreen && isScreenSharing) void toggleScreenShare();
+  }, [canShareScreen, isJoined, isScreenSharing, toggleScreenShare]);
   const tiles = useMemo(() => {
     if (!meeting || !isJoined) return [];
     const self = meeting.participants.find((p) => p.id === participantId);
@@ -274,6 +293,7 @@ function MeetingProvider({ children }) {
         name: "You",
         isYou: true,
         isHost: self?.isHost,
+        isCoHost: self?.isCoHost,
         isMuted,
         isCameraOff,
         isScreenSharing,
@@ -285,6 +305,7 @@ function MeetingProvider({ children }) {
         id: remote.id,
         name: remote.name,
         isHost: remote.isHost,
+        isCoHost: remote.isCoHost,
         isMuted: remote.isMuted,
         isCameraOff: remote.isCameraOff,
         isScreenSharing: remote.isScreenSharing,
@@ -316,6 +337,8 @@ function MeetingProvider({ children }) {
       isMuted,
       isCameraOff,
       isScreenSharing,
+      canShareScreen,
+      canUnmute,
       error,
       tiles,
       previewStream,
@@ -332,6 +355,8 @@ function MeetingProvider({ children }) {
       isMuted,
       isCameraOff,
       isScreenSharing,
+      canShareScreen,
+      canUnmute,
       error,
       tiles,
       previewStream,

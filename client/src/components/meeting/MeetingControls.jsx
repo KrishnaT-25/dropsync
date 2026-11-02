@@ -14,6 +14,8 @@ function MeetingControls() {
     isMuted,
     isCameraOff,
     isScreenSharing,
+    canShareScreen,
+    canUnmute,
     toggleMute,
     toggleCamera,
     toggleScreenShare,
@@ -25,6 +27,7 @@ function MeetingControls() {
       label: isMuted ? "Unmute" : "Mute",
       icon: isMuted ? MicOff : Mic,
       active: isMuted,
+      disabled: isMuted && !canUnmute,
       onClick: toggleMute
     },
     {
@@ -37,20 +40,22 @@ function MeetingControls() {
       label: isScreenSharing ? "Stop share" : "Share screen",
       icon: MonitorUp,
       active: isScreenSharing,
+      disabled: !isScreenSharing && !canShareScreen,
       onClick: () => {
         void toggleScreenShare();
       }
     }
   ];
   return /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center justify-center gap-2 sm:gap-3", children: [
-    buttons.map(({ label, icon: Icon, active, onClick }) => /* @__PURE__ */ jsx(
+    buttons.map(({ label, icon: Icon, active, disabled, onClick }) => /* @__PURE__ */ jsx(
       "button",
       {
         type: "button",
         onClick,
+        disabled,
         "aria-label": label,
         title: label,
-        className: "inline-flex h-11 w-11 items-center justify-center rounded-xl border transition hover:scale-105 active:scale-95 sm:h-12 sm:w-12",
+        className: "inline-flex h-11 w-11 items-center justify-center rounded-xl border transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 sm:h-12 sm:w-12",
         style: {
           background: active ? "rgba(248, 113, 113, 0.12)" : "var(--bg-elevated)",
           borderColor: active ? "rgba(248, 113, 113, 0.35)" : "var(--border)",

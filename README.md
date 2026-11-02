@@ -5,7 +5,7 @@ Ephemeral collaboration for quick shares and small video calls.
 DropSync has two complementary flows:
 
 1. **Rooms** — short-lived spaces to share text, links, files, clipboard, and code (optional password, QR join, live activity feed).
-2. **Meet** — standalone Google Meet–style calls at `/meet/:code` with real P2P audio/video, screen share, pin/unpin, and host controls.
+2. **Meet** — standalone calls at `/meet/:code` with P2P audio/video, screen share, pin/unpin, a host-controlled waiting room, meeting permissions, and co-host moderation.
 
 ---
 
@@ -209,7 +209,7 @@ Room/file shapes: [docs/temporary-storage.md](docs/temporary-storage.md). Meetin
 
 **Rooms:** `join-room` with member token, `activity`, `leave-room`, `room-state`, `activity`, `room-expired`.
 
-**Meetings:** `join-meeting`, `meeting-media-state`, `meeting-activity`, `meeting-offer` / `meeting-answer` / `meeting-ice-candidate`, host actions (`host-mute`, `host-remove`, `host-end`), `leave-meeting`, plus `meeting-state`, `peer-joined` / `peer-left`, `force-muted`, `removed-by-host`, `meeting-ended`.
+**Meetings:** token-authorized `join-meeting`, `meeting-media-state`, `meeting-activity`, `meeting-offer` / `meeting-answer` / `meeting-ice-candidate`, moderation (`host-mute`, `host-remove`, `meeting-admit`, `meeting-permissions`, `meeting-cohost`, `host-end`), `leave-meeting`, and roster/waiting-room events.
 
 Full payloads: [docs/socket-events.md](docs/socket-events.md).
 

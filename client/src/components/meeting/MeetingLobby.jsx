@@ -2,6 +2,7 @@ import { jsx, jsxs } from "react/jsx-runtime";
 import { Check, Copy, Link2, Mic, MicOff, Video, VideoOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMeeting } from "../../context/MeetingContext";
+import { useMeetingSession } from "../../context/MeetingSessionContext";
 import { buildMeetingLink, formatMeetingCode } from "../../utils/meetingCode";
 function MeetingLobby({
   defaultName = "",
@@ -16,9 +17,11 @@ function MeetingLobby({
     error,
     localVideoRef,
     ensurePreview,
+    stopPreview,
     toggleMute,
     toggleCamera
   } = useMeeting();
+  const { waitingForAdmission, admissionGranted, leaveCall } = useMeetingSession();
   const [name, setName] = useState(defaultName);
   const [localError, setLocalError] = useState("");
   const [linkCreated, setLinkCreated] = useState(false);
@@ -152,16 +155,19 @@ function MeetingLobby({
               }
             )
           ] }),
+          waitingForAdmission && <p key="waiting" role="status" className="text-sm text-accent">Waiting for a host or co-host to admit you. Keep this page open.</p>,
+          admissionGranted && <p key="admitted" role="status" className="text-sm text-accent">You have been admitted. Join the call when ready.</p>,
           (localError || error) && /* @__PURE__ */ jsx("p", { className: "text-sm text-red-400", children: localError || error }),
           /* @__PURE__ */ jsx(
             "button",
             {
               type: "submit",
-              disabled: joining,
+              disabled: joining || waitingForAdmission,
               className: "inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-[#0b0e11] transition hover:bg-accent-hover disabled:opacity-60",
-              children: joining ? "Joining\u2026" : isHost ? "Start call" : "Join call"
+              children: waitingForAdmission ? "Waiting for admission" : joining ? "Joining\u2026" : isHost ? "Start call" : "Join call"
             }
-          )
+          ),
+          waitingForAdmission && <button key="cancel-wait" type="button" className="w-full rounded-xl border px-4 py-2.5 text-sm" style={{ borderColor: "var(--border)" }} onClick={() => { stopPreview(); leaveCall(); }}>Cancel request</button>
         ] })
       ]
     }

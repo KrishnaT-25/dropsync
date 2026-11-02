@@ -1,10 +1,10 @@
 import { getSocket, connectSocket } from "./socket";
-function joinMeetingSocket(code, participantId, displayName) {
+function joinMeetingSocket(code, participantId, accessToken, displayName) {
   const instance = connectSocket();
   return new Promise((resolve) => {
     instance.emit(
       "join-meeting",
-      { code, participantId, displayName },
+      { code, participantId, accessToken, displayName },
       (ack) => {
         resolve(ack ?? { ok: false, error: "No response from server" });
       }
@@ -26,6 +26,15 @@ function emitHostMute(targetParticipantId) {
 }
 function emitHostRemove(targetParticipantId) {
   getSocket().emit("host-remove", { targetParticipantId });
+}
+function emitMeetingAdmit(targetParticipantId) {
+  getSocket().emit("meeting-admit", { targetParticipantId });
+}
+function emitMeetingPermissions(patch) {
+  getSocket().emit("meeting-permissions", patch);
+}
+function emitMeetingCoHost(targetParticipantId, enabled) {
+  getSocket().emit("meeting-cohost", { targetParticipantId, enabled });
 }
 function emitHostEnd() {
   getSocket().emit("host-end");
@@ -75,6 +84,18 @@ function onMeetingEnded(handler) {
 function offMeetingEnded(handler) {
   getSocket().off("meeting-ended", handler);
 }
+function onMeetingWaiting(handler) {
+  getSocket().on("meeting-waiting", handler);
+}
+function offMeetingWaiting(handler) {
+  getSocket().off("meeting-waiting", handler);
+}
+function onMeetingAdmitted(handler) {
+  getSocket().on("meeting-admitted", handler);
+}
+function offMeetingAdmitted(handler) {
+  getSocket().off("meeting-admitted", handler);
+}
 function getMeetingSocket() {
   return getSocket();
 }
@@ -82,6 +103,9 @@ export {
   emitHostEnd,
   emitHostMute,
   emitHostRemove,
+  emitMeetingAdmit,
+  emitMeetingPermissions,
+  emitMeetingCoHost,
   emitLeaveMeeting,
   emitMeetingActivity,
   emitMeetingMediaState,
@@ -90,6 +114,8 @@ export {
   offForceMuted,
   offMeetingActivity,
   offMeetingEnded,
+  offMeetingWaiting,
+  offMeetingAdmitted,
   offMeetingState,
   offPeerJoined,
   offPeerLeft,
@@ -97,6 +123,8 @@ export {
   onForceMuted,
   onMeetingActivity,
   onMeetingEnded,
+  onMeetingWaiting,
+  onMeetingAdmitted,
   onMeetingState,
   onPeerJoined,
   onPeerLeft,

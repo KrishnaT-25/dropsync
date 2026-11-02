@@ -32,6 +32,7 @@ function mapMeeting(api, selfId) {
     hostParticipantId: api.hostParticipantId,
     createdAt: api.createdAt,
     expiresAt: api.expiresAt,
+    permissions: api.permissions,
     participants: api.participants.map((p) => ({
       ...p,
       isYou: p.id === selfId
@@ -46,6 +47,9 @@ function MeetingSessionProvider({ children }) {
   const [exitReason, setExitReason] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
   const [rateLimitHint, setRateLimitHint] = useState(null);
+  const [waitingForAdmission, setWaitingForAdmission] = useState(false);
+  const [admissionGranted, setAdmissionGranted] = useState(false);
+  const [waitingRoom, setWaitingRoom] = useState([]);
   const participantIdRef = useRef(null);
   const isHostRef = useRef(false);
   useEffect(() => {
@@ -54,6 +58,7 @@ function MeetingSessionProvider({ children }) {
   const isHost = Boolean(
     meeting && participantId && meeting.hostParticipantId === participantId
   );
+  const isModerator = Boolean(isHost || meeting?.participants.some((person) => person.id === participantId && person.isCoHost));
   isHostRef.current = isHost;
   const applyMeeting = useCallback((api, selfId) => {
     setMeeting(mapMeeting(api, selfId));
@@ -61,6 +66,7 @@ function MeetingSessionProvider({ children }) {
   useEffect(() => {
     const handleState = (api) => {
       applyMeeting(api, participantIdRef.current);
+      if (!api.participants.some((person) => person.id === participantIdRef.current && (person.isHost || person.isCoHost))) setWaitingRoom([]);
       setConnection({ connected: true, error: null });
     };
     const handlePeerJoined = (payload) => {
@@ -80,21 +86,31 @@ function MeetingSessionProvider({ children }) {
         window.dispatchEvent(new CustomEvent("dropsync-force-mute"));
       }
     };
-    const handleRemoved = () => {
+    const handleRemoved = (payload) => {
+      meetingSocket.emitLeaveMeeting();
+      setWaitingForAdmission(false);
+      setWaitingRoom([]);
       setIsJoined(false);
       setMeeting(null);
       setParticipantId(null);
       saveStored(null);
-      setExitReason("removed");
+      setExitReason(payload?.pending ? "denied" : "removed");
       setConnection({ connected: false, error: null });
     };
     const handleEnded = (payload) => {
+      meetingSocket.emitLeaveMeeting();
+      setWaitingForAdmission(false);
+      setWaitingRoom([]);
       setIsJoined(false);
       setMeeting(null);
       setParticipantId(null);
       saveStored(null);
       setExitReason(payload.reason);
       setConnection({ connected: false, error: null });
+    };
+    const handleAdmitted = () => {
+      setWaitingForAdmission(false);
+      setAdmissionGranted(true);
     };
     meetingSocket.onMeetingState(handleState);
     meetingSocket.onPeerJoined(handlePeerJoined);
@@ -103,6 +119,8 @@ function MeetingSessionProvider({ children }) {
     meetingSocket.onForceMuted(handleForceMuted);
     meetingSocket.onRemovedByHost(handleRemoved);
     meetingSocket.onMeetingEnded(handleEnded);
+    meetingSocket.onMeetingWaiting(setWaitingRoom);
+    meetingSocket.onMeetingAdmitted(handleAdmitted);
     return () => {
       meetingSocket.offMeetingState(handleState);
       meetingSocket.offPeerJoined(handlePeerJoined);
@@ -111,9 +129,11 @@ function MeetingSessionProvider({ children }) {
       meetingSocket.offForceMuted(handleForceMuted);
       meetingSocket.offRemovedByHost(handleRemoved);
       meetingSocket.offMeetingEnded(handleEnded);
+      meetingSocket.offMeetingWaiting(setWaitingRoom);
+      meetingSocket.offMeetingAdmitted(handleAdmitted);
     };
   }, [applyMeeting]);
-  const prepareAsHost = useCallback((code, pid) => {
+  const prepareAsHost = useCallback((code, pid, accessToken) => {
     const normalized = normalizeMeetingCode(code);
     setParticipantId(pid);
     setIsJoined(false);
@@ -124,11 +144,13 @@ function MeetingSessionProvider({ children }) {
       hostParticipantId: pid,
       createdAt: (/* @__PURE__ */ new Date()).toISOString(),
       expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1e3).toISOString(),
+      permissions: { requireAdmission: true, allowScreenShare: true, allowParticipantUnmute: true },
       participants: [
         {
           id: pid,
           name: "Host",
           isHost: true,
+          isCoHost: false,
           isMuted: false,
           isCameraOff: false,
           isScreenSharing: false,
@@ -136,23 +158,25 @@ function MeetingSessionProvider({ children }) {
         }
       ]
     });
-    saveStored({ code: normalized, participantId: pid, isHost: true });
+    saveStored({ code: normalized, participantId: pid, accessToken, isHost: true });
     setConnection({ connected: false, error: null });
   }, []);
   const joinAsGuest = useCallback(
     async (code, displayName) => {
       const normalized = normalizeMeetingCode(code);
       try {
-        const { meeting: apiMeeting, participantId: pid } = await meetingApi.joinMeeting(
+        const { meeting: apiMeeting, participantId: pid, accessToken } = await meetingApi.joinMeeting(
           normalized,
           displayName.trim() || "Guest"
         );
         setParticipantId(pid);
         applyMeeting(apiMeeting, pid);
-        saveStored({ code: normalized, participantId: pid, isHost: false });
+        saveStored({ code: normalized, participantId: pid, accessToken, isHost: false });
         setExitReason(null);
         setActivityLog([]);
         setIsJoined(false);
+        setWaitingForAdmission(false);
+        setAdmissionGranted(false);
         return { ok: true };
       } catch (err) {
         return {
@@ -168,11 +192,17 @@ function MeetingSessionProvider({ children }) {
       const stored = loadStored();
       const code = meeting?.code ?? stored?.code;
       const pid = participantId ?? stored?.participantId;
-      if (!code || !pid) {
+      if (!code || !pid || !stored?.accessToken) {
         return { ok: false, error: "Missing meeting session" };
       }
       const name = displayName.trim() || "Guest";
-      const ack = await meetingSocket.joinMeetingSocket(code, pid, name);
+      const ack = await meetingSocket.joinMeetingSocket(code, pid, stored.accessToken, name);
+      if (ack.ok && ack.waiting) {
+        setWaitingForAdmission(true);
+        setAdmissionGranted(false);
+        setConnection({ connected: true, error: null });
+        return { ok: true, waiting: true };
+      }
       if (!ack.ok || !ack.meeting) {
         setConnection({ connected: false, error: ack.error ?? "Could not join meeting" });
         return { ok: false, error: ack.error ?? "Could not join meeting" };
@@ -180,11 +210,15 @@ function MeetingSessionProvider({ children }) {
       applyMeeting(ack.meeting, pid);
       setParticipantId(pid);
       setIsJoined(true);
+      setWaitingForAdmission(false);
+      setAdmissionGranted(false);
+      setWaitingRoom(ack.waitingRoom ?? []);
       setConnection({ connected: true, error: null });
       setExitReason(null);
       saveStored({
         code,
         participantId: pid,
+        accessToken: stored.accessToken,
         isHost: ack.meeting.hostParticipantId === pid
       });
       meetingSocket.emitMeetingActivity("joined the call");
@@ -201,6 +235,8 @@ function MeetingSessionProvider({ children }) {
       setExitReason("left");
     }
     setIsJoined(false);
+    setWaitingForAdmission(false);
+    setWaitingRoom([]);
     setMeeting(null);
     setParticipantId(null);
     saveStored(null);
@@ -209,6 +245,8 @@ function MeetingSessionProvider({ children }) {
   const endCallForEveryone = useCallback(() => {
     meetingSocket.emitHostEnd();
     setIsJoined(false);
+    setWaitingForAdmission(false);
+    setWaitingRoom([]);
     setMeeting(null);
     setParticipantId(null);
     saveStored(null);
@@ -220,6 +258,15 @@ function MeetingSessionProvider({ children }) {
   }, []);
   const hostRemove = useCallback((targetParticipantId) => {
     meetingSocket.emitHostRemove(targetParticipantId);
+  }, []);
+  const admitParticipant = useCallback((targetParticipantId) => {
+    meetingSocket.emitMeetingAdmit(targetParticipantId);
+  }, []);
+  const updatePermissions = useCallback((patch) => {
+    meetingSocket.emitMeetingPermissions(patch);
+  }, []);
+  const setCoHost = useCallback((targetParticipantId, enabled) => {
+    meetingSocket.emitMeetingCoHost(targetParticipantId, enabled);
   }, []);
   const emitMediaState = useCallback(
     (patch) => {
@@ -245,20 +292,24 @@ function MeetingSessionProvider({ children }) {
     (code) => {
       const stored = loadStored();
       const normalized = normalizeMeetingCode(code);
-      if (!stored || stored.code !== normalized) return false;
+      if (!stored?.accessToken || stored.code !== normalized) return false;
       setParticipantId(stored.participantId);
       setIsJoined(false);
       setExitReason(null);
+      setWaitingForAdmission(false);
+      setAdmissionGranted(false);
       setMeeting({
         code: normalized,
         hostParticipantId: stored.isHost ? stored.participantId : "",
         createdAt: (/* @__PURE__ */ new Date()).toISOString(),
         expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1e3).toISOString(),
+        permissions: { requireAdmission: true, allowScreenShare: true, allowParticipantUnmute: true },
         participants: stored.isHost ? [
           {
             id: stored.participantId,
             name: "Host",
             isHost: true,
+            isCoHost: false,
             isMuted: false,
             isCameraOff: false,
             isScreenSharing: false,
@@ -276,7 +327,11 @@ function MeetingSessionProvider({ children }) {
       meeting,
       participantId,
       isHost,
+      isModerator,
       isJoined,
+      waitingForAdmission,
+      admissionGranted,
+      waitingRoom,
       connection,
       exitReason,
       activityLog,
@@ -288,6 +343,9 @@ function MeetingSessionProvider({ children }) {
       endCallForEveryone,
       hostMute,
       hostRemove,
+      admitParticipant,
+      updatePermissions,
+      setCoHost,
       emitMediaState,
       emitActivity,
       clearExit,
@@ -297,7 +355,11 @@ function MeetingSessionProvider({ children }) {
       meeting,
       participantId,
       isHost,
+      isModerator,
       isJoined,
+      waitingForAdmission,
+      admissionGranted,
+      waitingRoom,
       connection,
       exitReason,
       activityLog,
@@ -309,6 +371,9 @@ function MeetingSessionProvider({ children }) {
       endCallForEveryone,
       hostMute,
       hostRemove,
+      admitParticipant,
+      updatePermissions,
+      setCoHost,
       emitMediaState,
       emitActivity,
       clearExit,

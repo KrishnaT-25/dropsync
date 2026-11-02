@@ -77,10 +77,19 @@ export interface MeetingParticipant {
   id: string
   name: string
   isHost: boolean
+  isCoHost: boolean
+  admitted: boolean
+  accessTokenHash: string
   socketId?: string
   isMuted: boolean
   isCameraOff: boolean
   isScreenSharing: boolean
+}
+
+export interface MeetingPermissions {
+  requireAdmission: boolean
+  allowScreenShare: boolean
+  allowParticipantUnmute: boolean
 }
 
 export interface MeetingRecord {
@@ -88,6 +97,7 @@ export interface MeetingRecord {
   hostParticipantId: string
   createdAt: string
   expiresAt: string
+  permissions: MeetingPermissions
   participants: MeetingParticipant[]
 }
 
@@ -96,7 +106,8 @@ export interface PublicMeetingRecord {
   hostParticipantId: string
   createdAt: string
   expiresAt: string
-  participants: Array<Omit<MeetingParticipant, 'socketId'>>
+  permissions: MeetingPermissions
+  participants: Array<Omit<MeetingParticipant, 'socketId' | 'accessTokenHash' | 'admitted'>>
 }
 
 export type MeetingEndedReason = 'host_ended' | 'host_left'

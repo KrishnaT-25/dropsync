@@ -88,7 +88,7 @@ function VideoTile({
         /* @__PURE__ */ jsx("div", { className: "absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2", children: /* @__PURE__ */ jsxs("div", { className: "flex items-center justify-between gap-2", children: [
           /* @__PURE__ */ jsxs("span", { className: "truncate text-xs font-medium text-white", children: [
             label,
-            tile.isHost && !tile.isYou && !isScreen ? " \xB7 Host" : "",
+            tile.isHost && !tile.isYou && !isScreen ? " \xB7 Host" : tile.isCoHost && !isScreen ? " \xB7 Co-host" : "",
             pinned ? " \xB7 Pinned" : ""
           ] }),
           /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-1", children: [

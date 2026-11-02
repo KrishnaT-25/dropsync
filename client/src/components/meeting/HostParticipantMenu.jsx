@@ -2,8 +2,8 @@ import { jsx, jsxs } from "react/jsx-runtime";
 import { MoreVertical } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMeetingSession } from "../../context/MeetingSessionContext";
-function HostParticipantMenu({ participantId, participantName }) {
-  const { isHost, hostMute, hostRemove } = useMeetingSession();
+function HostParticipantMenu({ participantId, participantName, isCoHost, targetIsHost }) {
+  const { isHost, isModerator, hostMute, hostRemove, setCoHost } = useMeetingSession();
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   useEffect(() => {
@@ -14,7 +14,7 @@ function HostParticipantMenu({ participantId, participantName }) {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
-  if (!isHost) return null;
+  if (!isModerator || targetIsHost || (isCoHost && !isHost)) return null;
   return /* @__PURE__ */ jsxs("div", { ref: rootRef, className: "relative", children: [
     /* @__PURE__ */ jsx(
       "button",
@@ -56,7 +56,8 @@ function HostParticipantMenu({ participantId, participantName }) {
               },
               children: "Remove"
             }
-          )
+          ),
+          isHost && <button key="cohost" type="button" className="block w-full px-3 py-2 text-left text-xs hover:bg-black/10" style={{ color: "var(--text-primary)" }} onClick={() => { setCoHost(participantId, !isCoHost); setOpen(false); }}>{isCoHost ? "Remove co-host" : "Make co-host"}</button>
         ]
       }
     )

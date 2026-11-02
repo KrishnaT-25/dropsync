@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { meetingStore } from '../store/meetingStore.js'
 import {
   connectClient,
   flushRateLimitKeys,
@@ -110,6 +111,7 @@ describe('socket isolation and host ACL', () => {
     await emitAck(meetSocket, 'join-meeting', {
       code: meeting.body.meeting.code,
       participantId: meeting.body.participantId,
+      accessToken: meeting.body.accessToken,
       displayName: 'Host',
     })
 
@@ -155,11 +157,13 @@ describe('socket isolation and host ACL', () => {
     await emitAck(hostSocket, 'join-meeting', {
       code,
       participantId: hostId,
+      accessToken: created.body.accessToken,
       displayName: 'Host',
     })
     await emitAck(guestSocket, 'join-meeting', {
       code,
       participantId: guestId,
+      accessToken: guestJoin.body.accessToken,
       displayName: 'Guest',
     })
 
@@ -187,5 +191,68 @@ describe('socket isolation and host ACL', () => {
 
     hostSocket.disconnect()
     guestSocket.disconnect()
+  })
+
+  it('authenticates moderators and lets a co-host admit waiting guests', async () => {
+    const created = await h.agent.post('/api/meetings').send({})
+    const code = created.body.meeting.code as string
+    expect(created.body.meeting.permissions.requireAdmission).toBe(true)
+    await meetingStore.setPermissions(code, created.body.participantId, { requireAdmission: false })
+    const first = await h.agent.post(`/api/meetings/${code}/join`).send({ displayName: 'First guest' })
+    const host = connectClient(h.baseUrl)
+    const coHost = connectClient(h.baseUrl)
+    const impostor = connectClient(h.baseUrl)
+    await Promise.all([waitConnected(host), waitConnected(coHost), waitConnected(impostor)])
+
+    const stolenId = await emitAck<{ ok: boolean }>(impostor, 'join-meeting', {
+      code, participantId: created.body.participantId, accessToken: first.body.accessToken, displayName: 'Impostor',
+    })
+    expect(stolenId.ok).toBe(false)
+    expect((await emitAck<{ ok: boolean }>(host, 'join-meeting', {
+      code, participantId: created.body.participantId, accessToken: created.body.accessToken, displayName: 'Host',
+    })).ok).toBe(true)
+    expect((await emitAck<{ ok: boolean }>(coHost, 'join-meeting', {
+      code, participantId: first.body.participantId, accessToken: first.body.accessToken, displayName: 'First guest',
+    })).ok).toBe(true)
+
+    expect((await emitAck<{ ok: boolean }>(coHost, 'meeting-permissions', { requireAdmission: true })).ok).toBe(false)
+    expect((await emitAck<{ ok: boolean }>(host, 'meeting-permissions', { requireAdmission: true })).ok).toBe(true)
+    const waitingList = new Promise<Array<{ id: string }>>((resolve) => host.once('meeting-waiting', resolve))
+    const second = await h.agent.post(`/api/meetings/${code}/join`).send({ displayName: 'Waiting guest' })
+    expect((await waitingList).map((person) => person.id)).toContain(second.body.participantId)
+    const waiting = connectClient(h.baseUrl)
+    await waitConnected(waiting)
+    const pendingAck = await emitAck<{ ok: boolean; waiting: boolean }>(waiting, 'join-meeting', {
+      code, participantId: second.body.participantId, accessToken: second.body.accessToken, displayName: 'Waiting guest',
+    })
+    expect(pendingAck).toMatchObject({ ok: true, waiting: true })
+    expect((await emitAck<{ ok: boolean }>(waiting, 'meeting-activity', { content: 'not admitted' })).ok).toBe(false)
+    expect((await emitAck<{ ok: boolean }>(coHost, 'meeting-admit', {
+      targetParticipantId: second.body.participantId,
+    })).ok).toBe(false)
+    expect((await emitAck<{ ok: boolean }>(coHost, 'meeting-cohost', {
+      targetParticipantId: first.body.participantId, enabled: true,
+    })).ok).toBe(false)
+    const publicMeeting = await h.agent.get(`/api/meetings/${code}`)
+    expect(publicMeeting.body.meeting.participants.map((person: { id: string }) => person.id)).not.toContain(second.body.participantId)
+    expect(JSON.stringify(publicMeeting.body)).not.toContain('accessTokenHash')
+
+    expect((await emitAck<{ ok: boolean }>(host, 'meeting-cohost', {
+      targetParticipantId: first.body.participantId, enabled: true,
+    })).ok).toBe(true)
+    const admitted = new Promise<void>((resolve) => waiting.once('meeting-admitted', resolve))
+    expect((await emitAck<{ ok: boolean }>(coHost, 'meeting-admit', {
+      targetParticipantId: second.body.participantId,
+    })).ok).toBe(true)
+    await admitted
+    expect((await emitAck<{ ok: boolean }>(waiting, 'join-meeting', {
+      code, participantId: second.body.participantId, accessToken: second.body.accessToken, displayName: 'Waiting guest',
+    })).ok).toBe(true)
+    expect((await meetingStore.getMeeting(code))?.participants.find((person) => person.id === first.body.participantId)?.isCoHost).toBe(true)
+
+    host.disconnect()
+    coHost.disconnect()
+    waiting.disconnect()
+    impostor.disconnect()
   })
 })

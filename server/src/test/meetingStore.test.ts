@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { meetingStore } from '../store/meetingStore.js'
+import { meetingStore, toPublicMeeting, waitingParticipants } from '../store/meetingStore.js'
 import { startTestServer, stopTestServer } from './helpers.js'
 
 describe('atomic meeting updates', () => {
@@ -24,14 +24,14 @@ describe('atomic meeting updates', () => {
 
   it('preserves concurrent edits to different fields and removals', async () => {
     const { meeting } = await meetingStore.createMeeting()
+    await meetingStore.setPermissions(meeting.code, meeting.hostParticipantId, { requireAdmission: false })
     const guests = await Promise.all(
       Array.from({ length: 3 }, (_, i) => meetingStore.joinMeeting(meeting.code, `Guest ${i}`)),
     )
     const [first, second, third] = guests.map((guest) => guest!.participantId)
 
     await Promise.all([
-      meetingStore.setParticipantName(meeting.code, first!, 'Renamed'),
-      meetingStore.bindSocket(meeting.code, first!, 'socket-1'),
+      meetingStore.bindSocket(meeting.code, first!, guests[0]!.accessToken, 'socket-1', 'Renamed'),
       meetingStore.updateParticipantMedia(meeting.code, first!, { isMuted: true }),
       meetingStore.updateParticipantMedia(meeting.code, first!, { isCameraOff: true }),
       meetingStore.updateParticipantMedia(meeting.code, second!, { isScreenSharing: true }),
@@ -51,5 +51,36 @@ describe('atomic meeting updates', () => {
     expect(remaining?.participants.map((person) => person.id).sort()).toEqual(
       [meeting.hostParticipantId, first].sort(),
     )
+  })
+
+  it('keeps tokens private and enforces admission, permissions, and co-host roles', async () => {
+    const host = await meetingStore.createMeeting()
+    const code = host.meeting.code
+    await meetingStore.setPermissions(code, host.participantId, { requireAdmission: false })
+    const moderator = await meetingStore.joinMeeting(code, 'Moderator')
+    expect(moderator).not.toBeNull()
+    expect(await meetingStore.bindSocket(code, host.participantId, moderator!.accessToken, 'impostor', 'Host')).toBeNull()
+    expect(await meetingStore.bindSocket(code, host.participantId, host.accessToken, 'host-socket', 'Host')).not.toBeNull()
+    expect(await meetingStore.setCoHost(code, moderator!.participantId, host.participantId, true)).toBeNull()
+    expect(await meetingStore.setCoHost(code, host.participantId, moderator!.participantId, true)).not.toBeNull()
+    expect(await meetingStore.setPermissions(code, moderator!.participantId, { requireAdmission: true })).toBeNull()
+    expect(await meetingStore.setPermissions(code, host.participantId, {
+      requireAdmission: true, allowScreenShare: false, allowParticipantUnmute: false,
+    })).not.toBeNull()
+
+    const guest = await meetingStore.joinMeeting(code, 'Waiting guest')
+    expect(guest).not.toBeNull()
+    expect(waitingParticipants(guest!.meeting).map((person) => person.id)).toContain(guest!.participantId)
+    expect(toPublicMeeting(guest!.meeting).participants.map((person) => person.id)).not.toContain(guest!.participantId)
+    expect(JSON.stringify(toPublicMeeting(guest!.meeting))).not.toContain('accessTokenHash')
+    expect(await meetingStore.updateParticipantMedia(code, guest!.participantId, { isScreenSharing: true })).toBeNull()
+    expect(await meetingStore.admitParticipant(code, guest!.participantId, guest!.participantId)).toBeNull()
+    expect(await meetingStore.admitParticipant(code, moderator!.participantId, guest!.participantId)).not.toBeNull()
+    expect(await meetingStore.updateParticipantMedia(code, guest!.participantId, { isScreenSharing: true })).toBeNull()
+    expect(await meetingStore.updateParticipantMedia(code, guest!.participantId, { isMuted: false })).toBeNull()
+    expect(await meetingStore.forceMute(code, moderator!.participantId, guest!.participantId)).not.toBeNull()
+    expect(await meetingStore.hostRemove(code, guest!.participantId, moderator!.participantId)).toBeNull()
+    expect(await meetingStore.setCoHost(code, host.participantId, moderator!.participantId, false)).not.toBeNull()
+    expect(await meetingStore.forceMute(code, moderator!.participantId, guest!.participantId)).toBeNull()
   })
 })

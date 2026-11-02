@@ -6,6 +6,7 @@ import {
   clientIpFromRequest,
 } from '../services/rateLimit.js'
 import { meetingStore, toPublicMeeting } from '../store/meetingStore.js'
+import { broadcastMeetingWaiting } from '../socket/index.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
 
 export const meetingsRouter = Router()
@@ -27,6 +28,7 @@ meetingsRouter.post('/', async (req, res, next) => {
     res.status(201).json({
       meeting: toPublicMeeting(result.meeting),
       participantId: result.participantId,
+      accessToken: result.accessToken,
     })
   } catch (err) {
     next(err)
@@ -98,9 +100,14 @@ meetingsRouter.post('/:code/join', async (req, res, next) => {
       return
     }
 
+    if (!result.meeting.participants.find((person) => person.id === result.participantId)?.admitted) {
+      broadcastMeetingWaiting(result.meeting)
+    }
+
     res.json({
       meeting: toPublicMeeting(result.meeting),
       participantId: result.participantId,
+      accessToken: result.accessToken,
     })
   } catch (err) {
     next(err)

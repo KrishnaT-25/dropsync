@@ -5,14 +5,15 @@ import {
   checkRateLimit,
   clientIpFromSocket,
 } from '../services/rateLimit.js'
-import { meetingStore, toPublicMeeting } from '../store/meetingStore.js'
-import type { MeetingEndedReason } from '../types.js'
+import { meetingStore, toPublicMeeting, waitingParticipants } from '../store/meetingStore.js'
+import type { MeetingEndedReason, MeetingRecord } from '../types.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
 import { trackSocketCleanup } from './cleanupTasks.js'
 
 const joinMeetingSchema = z.object({
   code: z.string(),
   participantId: z.string().uuid(),
+  accessToken: z.string().min(40),
   displayName: z.string().trim().min(1).max(32),
 })
 
@@ -25,6 +26,12 @@ const mediaStateSchema = z.object({
 const targetSchema = z.object({
   targetParticipantId: z.string().uuid(),
 })
+const permissionsSchema = z.object({
+  requireAdmission: z.boolean().optional(),
+  allowScreenShare: z.boolean().optional(),
+  allowParticipantUnmute: z.boolean().optional(),
+}).strict()
+const coHostSchema = targetSchema.extend({ enabled: z.boolean() })
 
 const activitySchema = z.object({
   content: z.string().trim().min(1).max(200),
@@ -39,6 +46,16 @@ const mediaSignalSchema = z.object({
 export interface MeetingSocketSession {
   code: string
   participantId: string
+  admitted: boolean
+}
+
+function notifyWaitingRoom(io: Server, meeting: MeetingRecord): void {
+  const waiting = waitingParticipants(meeting)
+  for (const person of meeting.participants) {
+    if (person.admitted && (person.isHost || person.isCoHost) && person.socketId) {
+      io.to(person.socketId).emit('meeting-waiting', waiting)
+    }
+  }
 }
 
 function meetingChannel(code: string) {
@@ -52,6 +69,10 @@ async function endMeetingForAll(
 ): Promise<void> {
   const channel = meetingChannel(code)
   io.to(channel).emit('meeting-ended', { reason })
+  const meeting = await meetingStore.getMeeting(code)
+  for (const person of meeting?.participants ?? []) {
+    if (!person.admitted && person.socketId) io.to(person.socketId).emit('meeting-ended', { reason })
+  }
   const sockets = await io.in(channel).fetchSockets()
   for (const s of sockets) {
     await s.leave(channel)
@@ -89,6 +110,10 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
       ack?.({ ok: false, error: 'Invalid meeting code' })
       return
     }
+    if (meetingSession && (meetingSession.code !== code || meetingSession.participantId !== parsed.data.participantId)) {
+      ack?.({ ok: false, error: 'Leave the current meeting before joining another' })
+      return
+    }
 
     const existing = await meetingStore.getMeeting(code)
     if (!existing) {
@@ -101,30 +126,30 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
       return
     }
 
-    const named = await meetingStore.setParticipantName(
-      code,
-      parsed.data.participantId,
-      parsed.data.displayName,
+    const bound = await meetingStore.bindSocket(
+      code, parsed.data.participantId, parsed.data.accessToken, socket.id, parsed.data.displayName,
     )
-    if (!named) {
-      ack?.({ ok: false, error: 'Meeting not found or participant invalid' })
+    if (!bound) {
+      ack?.({ ok: false, error: 'Meeting access denied' })
       return
     }
 
-    const meeting = await meetingStore.bindSocket(code, parsed.data.participantId, socket.id)
-    if (!meeting) {
-      ack?.({ ok: false, error: 'Meeting not found or participant invalid' })
+    const { meeting } = bound
+    meetingSession = { code, participantId: parsed.data.participantId, admitted: bound.admitted }
+    if (!bound.admitted) {
+      ack?.({ ok: true, waiting: true })
+      notifyWaitingRoom(io, meeting)
       return
     }
 
-    meetingSession = { code, participantId: parsed.data.participantId }
     const channel = meetingChannel(code)
     await socket.join(channel)
 
     const publicMeeting = toPublicMeeting(meeting)
     const self = meeting.participants.find((p) => p.id === parsed.data.participantId)
 
-    ack?.({ ok: true, meeting: publicMeeting })
+    ack?.({ ok: true, meeting: publicMeeting,
+      waitingRoom: self?.isHost || self?.isCoHost ? waitingParticipants(meeting) : undefined })
     socket.to(channel).emit('peer-joined', {
       participant: self
         ? {
@@ -142,7 +167,7 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
   })
 
   socket.on('meeting-media-state', async (payload) => {
-    if (!meetingSession) return
+    if (!meetingSession?.admitted) return
     const parsed = mediaStateSchema.safeParse(payload)
     if (!parsed.success) return
 
@@ -157,7 +182,7 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
   })
 
   socket.on('meeting-activity', async (payload, ack) => {
-    if (!meetingSession) {
+    if (!meetingSession?.admitted) {
       ack?.({ ok: false, error: 'Not in a meeting' })
       return
     }
@@ -201,15 +226,17 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
     event: 'meeting-offer' | 'meeting-answer' | 'meeting-ice-candidate',
     payload: unknown,
   ) => {
-    if (!meetingSession) return
+    if (!meetingSession?.admitted) return
     const parsed = mediaSignalSchema.safeParse(payload)
     if (!parsed.success) return
     if (parsed.data.senderParticipantId !== meetingSession.participantId) return
 
     const meeting = await meetingStore.getMeeting(meetingSession.code)
     if (!meeting) return
+    if (!meeting.participants.some((person) => person.id === meetingSession!.participantId && person.admitted)) return
     const target = meeting.participants.find((p) => p.id === parsed.data.targetParticipantId)
-    if (!target?.socketId) {
+    if (!target?.admitted) return
+    if (!target.socketId) {
       // Fallback: broadcast on meeting channel; clients filter by targetParticipantId
       socket.to(meetingChannel(meetingSession.code)).emit(event, parsed.data)
       return
@@ -228,7 +255,7 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
   })
 
   socket.on('host-mute', async (payload) => {
-    if (!meetingSession) return
+    if (!meetingSession?.admitted) return
     const parsed = targetSchema.safeParse(payload)
     if (!parsed.success) return
 
@@ -247,7 +274,7 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
   })
 
   socket.on('host-remove', async (payload) => {
-    if (!meetingSession) return
+    if (!meetingSession?.admitted) return
     const parsed = targetSchema.safeParse(payload)
     if (!parsed.success) return
 
@@ -261,12 +288,14 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
     const channel = meetingChannel(meetingSession.code)
     const targetSocketId = result.removed?.socketId
     if (targetSocketId) {
-      io.to(targetSocketId).emit('removed-by-host')
+      io.to(targetSocketId).emit('removed-by-host', { pending: !result.removed?.admitted })
       const targetSocket = io.sockets.sockets.get(targetSocketId)
       if (targetSocket) await targetSocket.leave(channel)
     }
 
     if (result.meeting) {
+      notifyWaitingRoom(io, result.meeting)
+      if (!result.removed?.admitted) return
       io.to(channel).emit('peer-left', {
         participantId: parsed.data.targetParticipantId,
         meeting: toPublicMeeting(result.meeting),
@@ -275,8 +304,44 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
     }
   })
 
+  socket.on('meeting-admit', async (payload, ack) => {
+    if (!meetingSession?.admitted) { ack?.({ ok: false }); return }
+    const parsed = targetSchema.safeParse(payload)
+    if (!parsed.success) { ack?.({ ok: false }); return }
+    const result = await meetingStore.admitParticipant(
+      meetingSession.code, meetingSession.participantId, parsed.data.targetParticipantId,
+    )
+    if (!result) { ack?.({ ok: false }); return }
+    if (result.admitted.socketId) io.to(result.admitted.socketId).emit('meeting-admitted')
+    notifyWaitingRoom(io, result.meeting)
+    ack?.({ ok: true })
+  })
+
+  socket.on('meeting-permissions', async (payload, ack) => {
+    if (!meetingSession?.admitted) { ack?.({ ok: false }); return }
+    const parsed = permissionsSchema.safeParse(payload)
+    if (!parsed.success) { ack?.({ ok: false }); return }
+    const meeting = await meetingStore.setPermissions(meetingSession.code, meetingSession.participantId, parsed.data)
+    if (!meeting) { ack?.({ ok: false }); return }
+    io.to(meetingChannel(meetingSession.code)).emit('meeting-state', toPublicMeeting(meeting))
+    ack?.({ ok: true })
+  })
+
+  socket.on('meeting-cohost', async (payload, ack) => {
+    if (!meetingSession?.admitted) { ack?.({ ok: false }); return }
+    const parsed = coHostSchema.safeParse(payload)
+    if (!parsed.success) { ack?.({ ok: false }); return }
+    const meeting = await meetingStore.setCoHost(
+      meetingSession.code, meetingSession.participantId, parsed.data.targetParticipantId, parsed.data.enabled,
+    )
+    if (!meeting) { ack?.({ ok: false }); return }
+    io.to(meetingChannel(meetingSession.code)).emit('meeting-state', toPublicMeeting(meeting))
+    notifyWaitingRoom(io, meeting)
+    ack?.({ ok: true })
+  })
+
   socket.on('host-end', async () => {
-    if (!meetingSession) return
+    if (!meetingSession?.admitted) return
     const meeting = await meetingStore.getMeeting(meetingSession.code)
     if (!meeting) return
     if (meeting.hostParticipantId !== meetingSession.participantId) return
@@ -300,8 +365,10 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
       return
     }
 
-    const { meeting: next } = await meetingStore.removeParticipant(code, participantId)
+    const { meeting: next, removed } = await meetingStore.removeParticipant(code, participantId)
     if (next) {
+      notifyWaitingRoom(io, next)
+      if (!removed?.admitted) return
       io.to(meetingChannel(code)).emit('peer-left', {
         participantId,
         meeting: toPublicMeeting(next),
@@ -323,8 +390,10 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
       return
     }
 
-    const { meeting: next } = await meetingStore.removeParticipant(code, participantId)
+    const { meeting: next, removed } = await meetingStore.removeParticipant(code, participantId)
     if (next) {
+      notifyWaitingRoom(io, next)
+      if (!removed?.admitted) return
       io.to(meetingChannel(code)).emit('peer-left', {
         participantId,
         meeting: toPublicMeeting(next),

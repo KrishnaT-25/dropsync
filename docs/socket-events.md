@@ -18,14 +18,16 @@ The older `file-offer`, `file-answer`, `file-ice-candidate`, and `file-transfer-
 
 ## Standalone meetings
 
-Meetings remain separate from sharing rooms. `join-meeting` uses `{ code, participantId, displayName }` after REST create/join. The server responds with `{ ok, meeting? }` and joins the socket to `meeting:{code}`.
+Meetings remain separate from sharing rooms. `join-meeting` uses `{ code, participantId, accessToken, displayName }` after REST create/join. The server responds with `{ ok, meeting? }` and joins admitted sockets to `meeting:{code}`. A waiting guest receives `{ ok: true, waiting: true }` and cannot send meeting media or activity until admitted and joined again.
 
 | Direction | Events | Purpose |
 |---|---|---|
 | Client → server | `meeting-media-state`, `meeting-activity` | Update participant flags and broadcast call activity. |
 | Client → server | `meeting-offer`, `meeting-answer`, `meeting-ice-candidate` | WebRTC signaling; browser media travels peer to peer. |
-| Client → server | `host-mute`, `host-remove`, `host-end`, `leave-meeting` | Host controls and departure. |
+| Client → server | `host-mute`, `host-remove`, `host-end`, `leave-meeting` | Moderation and departure. Co-hosts may mute/remove ordinary guests; only the host may end the meeting. |
+| Client → server | `meeting-admit`, `meeting-permissions`, `meeting-cohost` | Admit a waiting guest; host changes permissions and assigns/removes co-hosts. Only the original host can change permissions or co-host roles. |
 | Server → client | `meeting-state`, `peer-joined`, `peer-left` | Meeting roster updates. |
 | Server → client | `meeting-activity`, `force-muted`, `removed-by-host`, `meeting-ended` | Call activity and control results. |
+| Server → client | `meeting-waiting`, `meeting-admitted` | Private waiting list for moderators; admission notice for the waiting guest. |
 
 Meeting media is a six-person WebRTC mesh with optional TURN. The server relays signaling, not audio or video.

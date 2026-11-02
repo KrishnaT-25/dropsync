@@ -80,8 +80,8 @@ export function EntryTabs({ view }) {
   const startMeeting = async () => {
     setError(""); setBusy(true);
     try {
-      const { meeting, participantId } = await meetingApi.createMeeting();
-      sessionStorage.setItem(MEETING_STORAGE_KEY, JSON.stringify({ code: meeting.code, participantId, isHost: true }));
+      const { meeting, participantId, accessToken } = await meetingApi.createMeeting();
+      sessionStorage.setItem(MEETING_STORAGE_KEY, JSON.stringify({ code: meeting.code, participantId, accessToken, isHost: true }));
       navigate(`/meet/${meeting.code}`);
     } catch { setError("Could not start a meeting."); }
     finally { setBusy(false); }
