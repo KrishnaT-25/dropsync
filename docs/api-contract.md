@@ -21,6 +21,19 @@ Liveness check. Does not depend on Redis/Mongo connectivity beyond process start
 
 ---
 
+## `GET /ready`
+
+Readiness check for MongoDB and Redis. Each dependency is pinged with a one-second timeout. Returns `200` when both are available and `503` during shutdown or when either dependency is unavailable.
+
+```json
+{
+  "status": "ready",
+  "dependencies": { "mongo": true, "redis": true }
+}
+```
+
+---
+
 ## Room and file API
 
 The current room lifecycle, bearer-token authorization, multipart file endpoints, recovery, and deletion contracts are documented in [temporary-storage.md](temporary-storage.md).

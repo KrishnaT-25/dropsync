@@ -258,6 +258,7 @@ SPA fallback: [`client/vercel.json`](client/vercel.json).
 
 ```bash
 curl https://YOUR-API/health
+curl https://YOUR-API/ready
 ```
 
 ---

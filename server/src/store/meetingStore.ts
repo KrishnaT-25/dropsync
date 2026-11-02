@@ -8,6 +8,19 @@ import { generateRoomCode, isValidRoomCode, normalizeRoomCode } from '../utils/r
 const MEETING_DATA_PREFIX = 'meeting:data:'
 /** Meetings live longer than ephemeral share rooms (8h). */
 const MEETING_TTL_SECONDS = 8 * 60 * 60
+const MAX_UPDATE_ATTEMPTS = 50
+const COMPARE_AND_SWAP = `
+local current = redis.call('GET', KEYS[1])
+if not current or current ~= ARGV[1] then return 0 end
+if ARGV[2] == '' then
+  redis.call('DEL', KEYS[1])
+else
+  local ttl = redis.call('PTTL', KEYS[1])
+  if ttl <= 0 then return 0 end
+  redis.call('SET', KEYS[1], ARGV[2], 'PX', ttl)
+end
+return 1
+`
 
 function meetingDataKey(code: string): string {
   return `${MEETING_DATA_PREFIX}${code}`
@@ -37,16 +50,30 @@ export class MeetingStore {
     return getRedis()
   }
 
-  private async save(meeting: MeetingRecord): Promise<void> {
-    const ttl = Math.max(
-      60,
-      Math.ceil((new Date(meeting.expiresAt).getTime() - Date.now()) / 1000),
-    )
-    await this.redis().set(meetingDataKey(meeting.code), JSON.stringify(meeting), 'EX', ttl)
-  }
-
-  private async read(code: string): Promise<MeetingRecord | null> {
-    return parseMeeting(await this.redis().get(meetingDataKey(code)))
+  private async mutate<T>(
+    code: string,
+    change: (meeting: MeetingRecord) => { value: T; delete?: boolean } | null,
+  ): Promise<{ meeting: MeetingRecord | null; value: T } | null> {
+    const normalized = normalizeRoomCode(code)
+    if (!isValidRoomCode(normalized)) return null
+    const key = meetingDataKey(normalized)
+    for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt++) {
+      const raw = await this.redis().get(key)
+      const meeting = parseMeeting(raw)
+      if (!raw || !meeting) return null
+      if (new Date(meeting.expiresAt).getTime() <= Date.now()) {
+        await this.redis().eval(COMPARE_AND_SWAP, 1, key, raw, '')
+        return null
+      }
+      const result = change(meeting)
+      if (!result) return null
+      const next = result.delete ? '' : JSON.stringify(meeting)
+      const applied = await this.redis().eval(COMPARE_AND_SWAP, 1, key, raw, next)
+      if (applied === 1) {
+        return { meeting: result.delete ? null : structuredClone(meeting), value: result.value }
+      }
+    }
+    throw new Error('Meeting update contention exceeded retry limit')
   }
 
   async createMeeting(): Promise<{ meeting: MeetingRecord; participantId: string }> {
@@ -90,10 +117,11 @@ export class MeetingStore {
   async getMeeting(code: string): Promise<MeetingRecord | null> {
     const normalized = normalizeRoomCode(code)
     if (!isValidRoomCode(normalized)) return null
-    const meeting = await this.read(normalized)
+    const raw = await this.redis().get(meetingDataKey(normalized))
+    const meeting = parseMeeting(raw)
     if (!meeting) return null
     if (new Date(meeting.expiresAt).getTime() <= Date.now()) {
-      await this.deleteMeeting(normalized)
+      if (raw) await this.redis().eval(COMPARE_AND_SWAP, 1, meetingDataKey(normalized), raw, '')
       return null
     }
     return structuredClone(meeting)
@@ -103,13 +131,6 @@ export class MeetingStore {
     code: string,
     displayName: string,
   ): Promise<{ meeting: MeetingRecord; participantId: string } | null> {
-    const meeting = await this.getMeeting(code)
-    if (!meeting) return null
-
-    if (meeting.participants.length >= 6) {
-      return null
-    }
-
     const participantId = uuidv4()
     const participant: MeetingParticipant = {
       id: participantId,
@@ -119,9 +140,12 @@ export class MeetingStore {
       isCameraOff: false,
       isScreenSharing: false,
     }
-    meeting.participants.push(participant)
-    await this.save(meeting)
-    return { meeting: structuredClone(meeting), participantId }
+    const updated = await this.mutate(code, (meeting) => {
+      if (meeting.participants.length >= 6) return null
+      meeting.participants.push(participant)
+      return { value: participantId }
+    })
+    return updated?.meeting ? { meeting: updated.meeting, participantId } : null
   }
 
   /** Host creates via REST then sets display name when joining the socket lobby. */
@@ -130,13 +154,13 @@ export class MeetingStore {
     participantId: string,
     name: string,
   ): Promise<MeetingRecord | null> {
-    const meeting = await this.getMeeting(code)
-    if (!meeting) return null
-    const participant = meeting.participants.find((p) => p.id === participantId)
-    if (!participant) return null
-    participant.name = name.trim() || participant.name
-    await this.save(meeting)
-    return structuredClone(meeting)
+    const updated = await this.mutate(code, (meeting) => {
+      const participant = meeting.participants.find((p) => p.id === participantId)
+      if (!participant) return null
+      participant.name = name.trim() || participant.name
+      return { value: undefined }
+    })
+    return updated?.meeting ?? null
   }
 
   async bindSocket(
@@ -144,13 +168,13 @@ export class MeetingStore {
     participantId: string,
     socketId: string,
   ): Promise<MeetingRecord | null> {
-    const meeting = await this.getMeeting(code)
-    if (!meeting) return null
-    const participant = meeting.participants.find((p) => p.id === participantId)
-    if (!participant) return null
-    participant.socketId = socketId
-    await this.save(meeting)
-    return structuredClone(meeting)
+    const updated = await this.mutate(code, (meeting) => {
+      const participant = meeting.participants.find((p) => p.id === participantId)
+      if (!participant) return null
+      participant.socketId = socketId
+      return { value: undefined }
+    })
+    return updated?.meeting ?? null
   }
 
   async updateParticipantMedia(
@@ -158,13 +182,13 @@ export class MeetingStore {
     participantId: string,
     patch: Partial<Pick<MeetingParticipant, 'isMuted' | 'isCameraOff' | 'isScreenSharing'>>,
   ): Promise<MeetingRecord | null> {
-    const meeting = await this.getMeeting(code)
-    if (!meeting) return null
-    const participant = meeting.participants.find((p) => p.id === participantId)
-    if (!participant) return null
-    Object.assign(participant, patch)
-    await this.save(meeting)
-    return structuredClone(meeting)
+    const updated = await this.mutate(code, (meeting) => {
+      const participant = meeting.participants.find((p) => p.id === participantId)
+      if (!participant) return null
+      Object.assign(participant, patch)
+      return { value: undefined }
+    })
+    return updated?.meeting ?? null
   }
 
   async forceMute(
@@ -172,33 +196,26 @@ export class MeetingStore {
     hostParticipantId: string,
     targetParticipantId: string,
   ): Promise<MeetingRecord | null> {
-    const meeting = await this.getMeeting(code)
-    if (!meeting) return null
-    if (meeting.hostParticipantId !== hostParticipantId) return null
-    const target = meeting.participants.find((p) => p.id === targetParticipantId)
-    if (!target || target.isHost) return null
-    target.isMuted = true
-    await this.save(meeting)
-    return structuredClone(meeting)
+    const updated = await this.mutate(code, (meeting) => {
+      if (meeting.hostParticipantId !== hostParticipantId) return null
+      const target = meeting.participants.find((p) => p.id === targetParticipantId)
+      if (!target || target.isHost) return null
+      target.isMuted = true
+      return { value: undefined }
+    })
+    return updated?.meeting ?? null
   }
 
   async removeParticipant(
     code: string,
     participantId: string,
   ): Promise<{ meeting: MeetingRecord | null; removed: MeetingParticipant | null }> {
-    const meeting = await this.getMeeting(code)
-    if (!meeting) return { meeting: null, removed: null }
-
-    const index = meeting.participants.findIndex((p) => p.id === participantId)
-    if (index === -1) return { meeting: structuredClone(meeting), removed: null }
-
-    const [removed] = meeting.participants.splice(index, 1)
-    if (meeting.participants.length === 0) {
-      await this.deleteMeeting(code)
-      return { meeting: null, removed }
-    }
-    await this.save(meeting)
-    return { meeting: structuredClone(meeting), removed }
+    const updated = await this.mutate(code, (meeting) => {
+      const index = meeting.participants.findIndex((p) => p.id === participantId)
+      const removed = index === -1 ? null : meeting.participants.splice(index, 1)[0]!
+      return { value: removed, delete: meeting.participants.length === 0 }
+    })
+    return { meeting: updated?.meeting ?? null, removed: updated?.value ?? null }
   }
 
   async hostRemove(
@@ -206,11 +223,13 @@ export class MeetingStore {
     hostParticipantId: string,
     targetParticipantId: string,
   ): Promise<{ meeting: MeetingRecord | null; removed: MeetingParticipant | null } | null> {
-    const meeting = await this.getMeeting(code)
-    if (!meeting) return null
-    if (meeting.hostParticipantId !== hostParticipantId) return null
-    if (targetParticipantId === hostParticipantId) return null
-    return this.removeParticipant(code, targetParticipantId)
+    const updated = await this.mutate(code, (meeting) => {
+      if (meeting.hostParticipantId !== hostParticipantId || targetParticipantId === hostParticipantId) return null
+      const index = meeting.participants.findIndex((p) => p.id === targetParticipantId)
+      const removed = index === -1 ? null : meeting.participants.splice(index, 1)[0]!
+      return { value: removed, delete: meeting.participants.length === 0 }
+    })
+    return updated ? { meeting: updated.meeting, removed: updated.value } : null
   }
 
   async deleteMeeting(code: string): Promise<void> {

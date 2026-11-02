@@ -3,6 +3,7 @@ import { checkRateLimit, RATE_LIMITS } from '../services/rateLimit.js'
 import {
   connectClient,
   flushRateLimitKeys,
+  getRedis,
   startTestServer,
   stopTestServer,
   waitConnected,
@@ -37,6 +38,18 @@ describe('rate limiting', () => {
     await new Promise((r) => setTimeout(r, 2100))
     const after = await checkRateLimit(key, 3, 2000)
     expect(after.allowed).toBe(true)
+  })
+
+  it('sets an expiry atomically under concurrent increments and repairs old counters', async () => {
+    const key = `test:atomic:${Date.now()}`
+    const results = await Promise.all(Array.from({ length: 20 }, () => checkRateLimit(key, 5, 5000)))
+    expect(results.filter((result) => result.allowed)).toHaveLength(5)
+    expect(await getRedis().pttl(`rl:${key}`)).toBeGreaterThan(0)
+
+    const staleKey = `rl:${key}:stale`
+    await getRedis().set(staleKey, '3')
+    await checkRateLimit(`${key}:stale`, 5, 5000)
+    expect(await getRedis().pttl(staleKey)).toBeGreaterThan(0)
   })
 
   it('rate-limits activity socket events with a clear ack', async () => {

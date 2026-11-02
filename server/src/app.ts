@@ -7,6 +7,7 @@ import { roomFilesRouter } from './routes/roomFiles.js'
 import { transfersRouter } from './routes/transfers.js'
 import { getTransferStats } from './services/transferStats.js'
 import { cleanupRooms } from './services/roomCleanup.js'
+import { checkReadiness } from './services/readiness.js'
 
 export function createApp() {
   const app = express()
@@ -24,6 +25,14 @@ export function createApp() {
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
+  })
+
+  app.get('/ready', async (_req, res) => {
+    const dependencies = await checkReadiness()
+    res.status(dependencies.ready ? 200 : 503).json({
+      status: dependencies.ready ? 'ready' : 'unavailable',
+      dependencies: { mongo: dependencies.mongo, redis: dependencies.redis },
+    })
   })
 
   app.get('/api/ice-servers', (_req, res) => {

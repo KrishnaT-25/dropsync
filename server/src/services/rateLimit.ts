@@ -1,5 +1,15 @@
 import { getRedis } from '../db/redis.js'
 
+const INCREMENT_WITH_EXPIRY = `
+local count = redis.call('INCR', KEYS[1])
+local ttl = redis.call('PTTL', KEYS[1])
+if count == 1 or ttl < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+  ttl = tonumber(ARGV[1])
+end
+return {count, ttl}
+`
+
 export interface RateLimitResult {
   allowed: boolean
   retryAfterMs?: number
@@ -16,12 +26,8 @@ export async function checkRateLimit(
 ): Promise<RateLimitResult> {
   const redis = getRedis()
   const fullKey = `rl:${key}`
-  const count = await redis.incr(fullKey)
-  if (count === 1) {
-    await redis.pexpire(fullKey, windowMs)
-  }
+  const [count, ttl] = await redis.eval(INCREMENT_WITH_EXPIRY, 1, fullKey, windowMs) as [number, number]
   if (count > max) {
-    const ttl = await redis.pttl(fullKey)
     return { allowed: false, retryAfterMs: ttl > 0 ? ttl : windowMs }
   }
   return { allowed: true }
