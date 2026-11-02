@@ -9,8 +9,10 @@ import {
 } from "react";
 const ThemeContext = createContext(null);
 function getInitialTheme() {
-  const stored = localStorage.getItem("dropsync-theme");
-  if (stored === "light" || stored === "dark") return stored;
+  try {
+    const stored = localStorage.getItem("dropsync-theme");
+    if (stored === "light" || stored === "dark") return stored;
+  } catch { /* The theme still works when browser storage is blocked. */ }
   return "dark";
 }
 function ThemeProvider({ children }) {
@@ -18,7 +20,9 @@ function ThemeProvider({ children }) {
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");
-    localStorage.setItem("dropsync-theme", theme);
+    try {
+      localStorage.setItem("dropsync-theme", theme);
+    } catch { /* Keep the selected theme for this session. */ }
   }, [theme]);
   const setTheme = useCallback((next) => {
     setThemeState(next);

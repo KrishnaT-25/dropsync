@@ -1,4 +1,4 @@
-import { Boxes, ChevronDown, Moon, Sun, UsersRound, Video } from "lucide-react";
+import { Boxes, Moon, Sun, UsersRound, Video } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useTheme } from "../../context/ThemeContext";
 
@@ -22,7 +22,7 @@ export function Header({ onlineCount = 0, showOnline = false, rightSlot, roomNam
       {roomName && <Link to="/?view=meet" className="ds-icon-button" aria-label="Start or join a video meeting" title="Video meetings"><Video size={17} /></Link>}
       {rightSlot}
       <button className="ds-profile" type="button" onClick={toggleTheme} title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
-        <span>{theme === "dark" ? <Moon size={15} /> : <Sun size={15} />}</span><ChevronDown size={13} />
+        <span>{theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}</span><span className="ds-theme-label">{theme === "dark" ? "Light" : "Dark"}</span>
       </button>
     </div>
   </header>;

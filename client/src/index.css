@@ -22,6 +22,8 @@
 
 :root {
   color-scheme: light;
+  --color-accent: #087b96;
+  --color-accent-hover: #0b94ae;
   --bg: var(--color-surface-light);
   --bg-card: var(--color-surface-card-light);
   --bg-elevated: var(--color-surface-elevated-light);
@@ -43,6 +45,8 @@
 
 .dark {
   color-scheme: dark;
+  --color-accent: #5de6f7;
+  --color-accent-hover: #89effb;
   --bg: #040e13;
   --bg-card: #0a1b22;
   --bg-elevated: #10242c;
@@ -312,6 +316,89 @@ body {
 .ds-danger { color: #ff8799; }
 .ds-danger-button { background: #9b3245; color: white; }
 .ds-loading { color: #c6e2eb; font-size: 14px; }
+
+/* Keep the neon accents while giving light mode its own readable surfaces. */
+html:not(.dark) .ds-app-inner { border-color: rgba(17, 111, 138, .25); background: radial-gradient(ellipse at 50% 8%, rgba(39, 187, 200, .13), transparent 50%), #f6fbfd; box-shadow: inset 0 0 65px rgba(35, 114, 132, .04); }
+html:not(.dark) .ds-glow-one { background: radial-gradient(circle, rgba(0, 160, 178, .13), transparent 70%); }
+html:not(.dark) .ds-glow-two { background: radial-gradient(circle, rgba(58, 107, 235, .10), transparent 68%); }
+html:not(.dark) .ds-wave-one { background: linear-gradient(90deg, #b9e7e9, #e0f3f4 45%, #a2dfe4); opacity: .8; }
+html:not(.dark) .ds-wave-two { background: linear-gradient(90deg, #9cdadd, #c9e9ed 48%, #8bd2da); opacity: .55; }
+html:not(.dark) .ds-brand, html:not(.dark) .ds-top-nav a, html:not(.dark) .ds-hero-copy h1, html:not(.dark) .ds-feature, html:not(.dark) .ds-form-card label, html:not(.dark) .ds-recent-item, html:not(.dark) .ds-empty h2, html:not(.dark) .ds-file-row { color: #16323f; }
+html:not(.dark) .ds-top-nav a:hover, html:not(.dark) .ds-top-nav a.active, html:not(.dark) .ds-eyebrow, html:not(.dark) .ds-text-link { color: #087b96; }
+html:not(.dark) .ds-header-room, html:not(.dark) .ds-panel-header h1, html:not(.dark) .ds-form-heading h1, html:not(.dark) .ds-settings-card h2 { color: #17333f; }
+html:not(.dark) .ds-icon-button, html:not(.dark) .ds-online-count { color: #365d6d; }
+html:not(.dark) .ds-icon-button:hover { background: rgba(17, 137, 159, .10); }
+html:not(.dark) .ds-profile { color: #315466; background: #e7f4f7; border-color: #b8dce4; }
+html:not(.dark) .ds-profile > span:first-child { color: #087b96; border-color: #56aac2; }
+.ds-theme-label { padding: 0 4px 0 1px; font-size: 11px; font-weight: 700; }
+html:not(.dark) .ds-live { color: #07563e; background: #d9f5e9; }
+html:not(.dark) .ds-status { color: #345566; background: #e2edf2; }
+html:not(.dark) .ds-status.is-active { color: #07563e; background: #d9f5e9; }
+html:not(.dark) .ds-hero-copy h1 span { color: #2b63e4; }
+html:not(.dark) .ds-hero-copy p, html:not(.dark) .ds-form-heading p, html:not(.dark) .ds-panel-header p { color: #587384; }
+html:not(.dark) .ds-feature-icon { color: #087b96; background: radial-gradient(circle, rgba(21, 182, 199, .20), transparent 70%); filter: none; }
+html:not(.dark) .ds-entry-card { color: #193846; border-color: #a8d8e2; background: linear-gradient(135deg, #e8f8fa, #d9f0f4); box-shadow: 0 12px 25px rgba(38, 112, 131, .09); }
+html:not(.dark) .ds-entry-card:hover { border-color: #22a7bf; box-shadow: 0 10px 28px rgba(17, 144, 166, .16); }
+html:not(.dark) .ds-entry-card svg { color: #087b96; filter: none; }
+html:not(.dark) .ds-entry-card span { color: #587483; }
+html:not(.dark) .ds-text-link:hover { color: #075c77; }
+html:not(.dark) .ds-heading-icon { color: #087b96; filter: none; }
+html:not(.dark) .ds-form-card { border-color: #c6e2e8; background: linear-gradient(145deg, #ffffff, #f5fbfd); box-shadow: 0 18px 32px rgba(35, 94, 113, .10); }
+html:not(.dark) .ds-field { color: #183746; border-color: #bedbe3; background: #f7fbfc; }
+html:not(.dark) .ds-field::placeholder { color: #718c9a; }
+html:not(.dark) .ds-field:focus { border-color: #168eb0; box-shadow: 0 0 0 3px rgba(22, 142, 176, .14); }
+html:not(.dark) .ds-code-field { border-color: #73b8ca; box-shadow: 0 0 14px rgba(19, 157, 182, .10); }
+html:not(.dark) .ds-optional, html:not(.dark) .ds-form-note, html:not(.dark) .ds-divider-text { color: #657f8d; }
+html:not(.dark) .ds-duration { color: #385969; border-color: #c6e0e7; background: #edf6f8; }
+html:not(.dark) .ds-duration:hover, html:not(.dark) .ds-duration.selected { color: #075d77; border-color: #138baa; background: #dcf2f6; box-shadow: 0 0 14px rgba(17, 139, 170, .15); }
+html:not(.dark) .ds-password-toggle { border-color: #c9e0e6; background: #edf7f9; }
+html:not(.dark) .ds-password-toggle > svg { color: #49788b; }
+html:not(.dark) .ds-password-toggle small { color: #617e8b; }
+html:not(.dark) .ds-switch { background: #a9c3cf; }
+html:not(.dark) .ds-switch.on { background: #326af9; }
+html:not(.dark) .ds-secondary-button { color: #075d77; border-color: #91c8d5; background: #def1f5; }
+html:not(.dark) .ds-recent-item { background: linear-gradient(100deg, #ffffff, #f2f9fb); }
+html:not(.dark) .ds-recent-item:hover { border-color: #67b6c8; }
+html:not(.dark) .ds-recent-avatar { color: #087b96; background: #def2f5; }
+html:not(.dark) .ds-recent-info small { color: #617c89; }
+html:not(.dark) .ds-empty { color: #597a88; border-color: #9fcbd5; }
+html:not(.dark) .ds-empty svg { color: #087b96; }
+html:not(.dark) .ds-dashboard { border-color: #d2e8ed; background: rgba(255, 255, 255, .76); box-shadow: 0 15px 45px rgba(42, 101, 121, .08); }
+html:not(.dark) .ds-sidebar { border-color: #cfe5eb; background: linear-gradient(160deg, #f3fafb, #eaf6f8); }
+html:not(.dark) .ds-sidebar-link { color: #4b6b7b; }
+html:not(.dark) .ds-sidebar-link:hover { color: #0c627b; background: #dff2f6; }
+html:not(.dark) .ds-sidebar-link.selected { color: #075e79; border-color: #8ac4d2; background: linear-gradient(100deg, #d5f0f5, #e5f6f8); box-shadow: 0 0 12px rgba(17, 145, 171, .12); }
+html:not(.dark) .ds-sidebar-link small { color: #427c8f; }
+html:not(.dark) .ds-expiry-card { border-color: #9fcbd8; background: linear-gradient(120deg, #e3f4f7, #f5fbfc); box-shadow: none; }
+html:not(.dark) .ds-expiry-card > span { color: #5c7988; }
+html:not(.dark) .ds-expiry-card > div, html:not(.dark) .ds-expiry-card > p { color: #244957 !important; }
+html:not(.dark) .ds-expiry-card svg { color: #087b96; }
+html:not(.dark) .ds-leave { color: #587786; }
+html:not(.dark) .ds-leave:hover { color: #bd3a57; }
+html:not(.dark) .ds-workspace { background: radial-gradient(ellipse at 90% 100%, rgba(70, 184, 191, .10), transparent 38%); }
+html:not(.dark) .ds-outline-button { color: #09637d; border-color: #9bcbd7; background: #e9f5f8; }
+html:not(.dark) .ds-outline-button:hover { border-color: #168eac; }
+html:not(.dark) .ds-recovery-banner { color: #285f70; border-color: #a1d6df; background: #e7f6f8; }
+html:not(.dark) .ds-dropzone { color: #214c5c; border-color: #8bc4d2; background: linear-gradient(120deg, #f3fafb, #e9f6f8); }
+html:not(.dark) .ds-dropzone.dragging { border-color: #168eac; background: #d9f2f5; }
+html:not(.dark) .ds-dropzone > svg { color: #0c89a5; }
+html:not(.dark) .ds-dropzone span { color: #5b7886; }
+html:not(.dark) .ds-dropzone button { color: #086fac; }
+html:not(.dark) .ds-dropzone small, html:not(.dark) .ds-file-head, html:not(.dark) .ds-table-empty { color: #63818f; }
+html:not(.dark) .ds-file-row { border-color: #dcebef; }
+html:not(.dark) .ds-file-row:hover { background: #eef8fa; }
+html:not(.dark) .ds-file-row > button { color: #317287; }
+html:not(.dark) .ds-upload-progress { color: #315866; background: #e7f4f7; }
+html:not(.dark) .ds-upload-progress > div { background: #c8e1e8; }
+html:not(.dark) .ds-person { background: #f4fafb; }
+html:not(.dark) .ds-person small { color: #65818e; }
+html:not(.dark) .ds-settings-card { background: #f8fcfd; }
+html:not(.dark) .ds-settings-card p, html:not(.dark) .ds-settings-card small, html:not(.dark) .ds-danger-zone p { color: #5b7785; }
+html:not(.dark) .ds-secret { color: #244856; background: #edf6f8; }
+html:not(.dark) .ds-settings-card .text-white { background: #d8eef3 !important; }
+html:not(.dark) .ds-danger-zone { border-color: #cce3e9; }
+html:not(.dark) .ds-loading { color: #426779; }
+html:not(.dark) .bg-accent { color: #fff; }
 
 @media (max-width: 900px) {
   .ds-header { grid-template-columns: 1fr auto; }
