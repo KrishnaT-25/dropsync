@@ -14,6 +14,6 @@ browser media permissions, fake devices, and ICE timing make it too flaky for a 
 7. Start screen share → remote tile shows the shared screen updating live.
 8. Host force-mute guest → guest mic stops and remote audio is silent.
 9. Close one tab → the other side cleans up without hanging.
-10. Without TURN, same-network calls should still work via STUN.
+10. With TURN configured, repeat with two different networks (for example home Wi-Fi and mobile data). Confirm the selected ICE candidate pair includes a `relay` candidate in `chrome://webrtc-internals` when direct connectivity is unavailable. See [TURN setup](turn-setup.md).
 
 If any step fails, treat Task 1 (meeting mesh) as incomplete.

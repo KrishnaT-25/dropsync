@@ -22,6 +22,7 @@ const envSchema = z.object({
     ),
   STUN_URLS: z.string().optional(),
   TURN_URL: optionalUrl,
+  TURN_URLS: optionalUrl,
   TURN_USERNAME: optionalUrl,
   TURN_CREDENTIAL: optionalUrl,
   AWS_REGION: optionalUrl,
@@ -47,8 +48,18 @@ const stunUrls = (parsed.data.STUN_URLS ?? 'stun:stun.l.google.com:19302')
   .map((s) => s.trim())
   .filter(Boolean)
 
+const turnUrls = (parsed.data.TURN_URLS ?? parsed.data.TURN_URL ?? '')
+  .split(',')
+  .map((url) => url.trim())
+  .filter(Boolean)
+
+if (turnUrls.some((url) => !/^turns?:\S+$/i.test(url))) {
+  console.error('TURN_URLS must contain comma-separated turn: or turns: URLs')
+  process.exit(1)
+}
+
 const turnConfigured = Boolean(
-  parsed.data.TURN_URL && parsed.data.TURN_USERNAME && parsed.data.TURN_CREDENTIAL,
+  turnUrls.length && parsed.data.TURN_USERNAME && parsed.data.TURN_CREDENTIAL,
 )
 
 const storageConfigured = Boolean(
@@ -60,7 +71,7 @@ const storageConfigured = Boolean(
 
 if (!turnConfigured) {
   console.warn(
-    '[ice] TURN is not configured (TURN_URL / TURN_USERNAME / TURN_CREDENTIAL). Cross-network P2P reliability will be degraded; STUN-only mode is active.',
+    '[ice] TURN is not configured (TURN_URLS / TURN_USERNAME / TURN_CREDENTIAL). Cross-network P2P reliability will be degraded; STUN-only mode is active.',
   )
 }
 
@@ -80,7 +91,7 @@ export const config = {
   stunUrls,
   turn: turnConfigured
     ? {
-        urls: parsed.data.TURN_URL!,
+        urls: turnUrls,
         username: parsed.data.TURN_USERNAME!,
         credential: parsed.data.TURN_CREDENTIAL!,
       }

@@ -19,6 +19,7 @@ class MeetingWebRTCManager {
   selfId = null;
   socket = null;
   iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
+  iceServersReady = null;
   peers = /* @__PURE__ */ new Map();
   pendingCandidates = /* @__PURE__ */ new Map();
   localStream = null;
@@ -32,10 +33,11 @@ class MeetingWebRTCManager {
   configure(opts) {
     this.selfId = opts.selfId;
     this.socket = opts.socket;
+    this.iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
     this.onRemoteStream = opts.onRemoteStream;
     this.onMeshError = opts.onMeshError ?? null;
     this.bindSocket();
-    void this.refreshIceServers();
+    this.iceServersReady = this.refreshIceServers();
   }
   async refreshIceServers() {
     try {
@@ -161,7 +163,7 @@ class MeetingWebRTCManager {
     }
   }
   async syncPeers(remoteParticipantIds) {
-    await this.refreshIceServers();
+    await this.iceServersReady;
     const unique = [...new Set(remoteParticipantIds)].filter((id) => id && id !== this.selfId);
     const total = unique.length + 1;
     if (total > MAX_MESH_PARTICIPANTS) {
@@ -240,6 +242,7 @@ class MeetingWebRTCManager {
     if (this.makingOffer.has(peerId)) return;
     this.makingOffer.add(peerId);
     try {
+      await this.iceServersReady;
       const peer = this.ensurePeerShell(peerId, { addOutbound: true });
       const offer = await peer.pc.createOffer();
       await peer.pc.setLocalDescription(offer);
@@ -251,6 +254,7 @@ class MeetingWebRTCManager {
     }
   }
   async handleOffer(msg) {
+    await this.iceServersReady;
     const payload = msg.payload;
     const peerId = msg.senderParticipantId;
     let peer = this.peers.get(peerId);
@@ -332,6 +336,7 @@ class MeetingWebRTCManager {
     this.outboundVideoTrack = null;
     this.localStream = null;
     this.selfId = null;
+    this.iceServersReady = null;
   }
 }
 const meetingWebRTC = new MeetingWebRTCManager();

@@ -117,7 +117,7 @@ MONGODB_URI=mongodb://localhost:27017/dropsync?replicaSet=rs0&directConnection=t
 
 Storage and cleanup (see `server/.env.example` and [setup guide](docs/temporary-storage.md)):
 
-- `STUN_URLS`, `TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL`
+- `STUN_URLS`, `TURN_URLS`, `TURN_USERNAME`, `TURN_CREDENTIAL` for meeting relay ([TURN setup](docs/turn-setup.md)); `TURN_URL` remains a single-URL fallback
 - `AWS_REGION`, `AWS_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` for private S3
 - `CLEANUP_SECRET` shared with the GitHub Actions cleanup workflow
 

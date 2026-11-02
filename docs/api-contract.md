@@ -29,7 +29,7 @@ The current room lifecycle, bearer-token authorization, multipart file endpoints
 
 ## `GET /api/ice-servers`
 
-ICE servers for standalone meeting peer connections (STUN always; TURN only if configured).
+ICE servers for standalone meeting peer connections (STUN always; TURN only if configured). `turnConfigured` reports configuration, not proof that the relay is reachable. When `TURN_URLS` is set, the TURN entry's `urls` is an array of all configured transports.
 
 ### Response `200`
 

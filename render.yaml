@@ -19,6 +19,12 @@ services:
           property: connectionString
       - key: MONGODB_URI
         sync: false
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
       - key: AWS_REGION
         sync: false
       - key: AWS_S3_BUCKET

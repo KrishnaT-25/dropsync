@@ -28,7 +28,7 @@ export function createApp() {
 
   app.get('/api/ice-servers', (_req, res) => {
     const iceServers: Array<{
-      urls: string
+      urls: string | string[]
       username?: string
       credential?: string
     }> = config.stunUrls.map((urls) => ({ urls }))
@@ -41,7 +41,7 @@ export function createApp() {
       })
     }
 
-    res.json({ iceServers, turnConfigured: Boolean(config.turn) })
+    res.set('Cache-Control', 'no-store').json({ iceServers, turnConfigured: Boolean(config.turn) })
   })
 
   app.get('/api/transfer-stats', (_req, res) => {

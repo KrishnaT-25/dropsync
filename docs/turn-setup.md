@@ -1,0 +1,10 @@
+# TURN setup for DropSync meetings
+
+TURN relays encrypted WebRTC media when browsers cannot connect directly. It requires an account with a TURN provider; deploying code alone cannot supply relay credentials. The [Open Relay Project](https://www.metered.ca/tools/openrelay/) currently offers a free account without a credit card, subject to its usage limits and terms. Use its dashboard's TURN credential, not the account-wide secret key.
+
+1. Sign up at the [Metered dashboard](https://dashboard.metered.ca/) and open **TURN Server → Credentials**. Create a credential if needed. Copy the credential's username and password and the complete `iceServers` URL list from **Get credential**. The provider's [quickstart](https://www.metered.ca/docs/turn-server-service/quickstart/) shows the dashboard flow.
+2. In the Render `dropsync-api` service, open **Environment**. Set `TURN_URLS` to every `turn:` and `turns:` URL from that credential, separated by commas. Set `TURN_USERNAME` and `TURN_CREDENTIAL` to that credential's username and password. Keep these values in Render only. Do not put the account-wide Metered secret key in the app or in Git.
+3. Save and redeploy the API. Visit `https://YOUR-RENDER-API.onrender.com/api/ice-servers` and check `turnConfigured: true` and that `iceServers` includes the TURN URL list. This proves configuration was delivered to clients, but does not prove the relay can connect.
+4. Use Metered's [TURN server testing tool](https://www.metered.ca/turn-server-testing/) with the same credential and confirm it yields a relay candidate. Then test a meeting between two different networks and inspect `chrome://webrtc-internals` for a selected `relay` candidate pair. Verify audio and video in both directions.
+
+The browser still prefers a direct path when one works, so a successful call may not use TURN. A forced relay test should use a separate test setup, not a production setting. Monitor the provider's usage dashboard; a six-person mesh can use substantial relay bandwidth. The API's `turnConfigured` flag alone cannot guarantee calls on every network.
