@@ -120,16 +120,19 @@ export const roomFiles = {
     const file = await fileForOwner(code, fileId, participantId)
     if (file.status === 'ready') return file
     if (file.status !== 'uploading' || !file.uploadId) throw new FileAccessError('Upload unavailable', 409)
-    let head = await objectStorage.head(file.objectKey)
-    if (!head) {
+    let head: { size: number } | null = null
+    try {
       const parts = await objectStorage.parts(file.objectKey, file.uploadId)
       const expected = Math.ceil(file.size / objectStorage.partSize)
       if (parts.length !== expected || parts.some((part, i) => part.partNumber !== i + 1)) {
         throw new FileAccessError('Upload has missing parts', 409)
       }
       await objectStorage.complete(file.objectKey, file.uploadId, parts)
-      head = await objectStorage.head(file.objectKey)
+    } catch (error) {
+      const name = (error as { name?: string }).name
+      if (name !== 'NoSuchUpload' && name !== 'NotFound') throw error
     }
+    head = await objectStorage.head(file.objectKey)
     if (!head || head.size !== file.size || !(await roomStore.getRoom(code, false))) {
       await objectStorage.deleteKeys([file.objectKey])
       await releaseReservation(file)

@@ -58,8 +58,12 @@ describe('durable rooms and private files', () => {
     vi.spyOn(objectStorage, 'create').mockResolvedValue('upload-1')
     vi.spyOn(objectStorage, 'partUrl').mockResolvedValue('https://example.test/signed-part')
     vi.spyOn(objectStorage, 'parts').mockResolvedValue([{ partNumber: 1, etag: '"etag"' }])
-    vi.spyOn(objectStorage, 'complete').mockResolvedValue()
-    vi.spyOn(objectStorage, 'head').mockResolvedValueOnce(null).mockResolvedValue({ size: 1024 })
+    let completed = false
+    vi.spyOn(objectStorage, 'complete').mockImplementation(async () => { completed = true })
+    vi.spyOn(objectStorage, 'head').mockImplementation(async () => {
+      if (!completed) throw Object.assign(new Error('Access denied for an object not yet created'), { name: 'AccessDenied' })
+      return { size: 1024 }
+    })
     vi.spyOn(objectStorage, 'downloadUrl').mockResolvedValue('https://example.test/signed-download')
 
     const created = await h.agent.post('/api/rooms').send({ durationMinutes: 5 })
