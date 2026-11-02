@@ -1,7 +1,8 @@
 import { jsx, jsxs } from "react/jsx-runtime";
-import { Mic, MicOff, Video, VideoOff } from "lucide-react";
+import { Check, Copy, Link2, Mic, MicOff, Video, VideoOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useMeeting } from "../../context/MeetingContext";
+import { buildMeetingLink, formatMeetingCode } from "../../utils/meetingCode";
 function MeetingLobby({
   defaultName = "",
   isHost,
@@ -20,7 +21,20 @@ function MeetingLobby({
   } = useMeeting();
   const [name, setName] = useState(defaultName);
   const [localError, setLocalError] = useState("");
+  const [linkCreated, setLinkCreated] = useState(false);
+  const [copied, setCopied] = useState("");
+  const inviteLink = buildMeetingLink(meetingCode, window.location.origin);
   const startedRef = useRef(false);
+  const copy = async (value, kind) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(kind);
+      setLocalError("");
+      window.setTimeout(() => setCopied(""), 1800);
+    } catch {
+      setLocalError("Could not copy automatically. Select and copy the code or link instead.");
+    }
+  };
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
@@ -58,15 +72,8 @@ function MeetingLobby({
           }
         ),
         /* @__PURE__ */ jsx("h1", { className: "mb-1 text-xl font-semibold", style: { color: "var(--text-primary)" }, children: "Ready to join?" }),
-        /* @__PURE__ */ jsxs("p", { className: "mb-4 text-sm", style: { color: "var(--text-secondary)" }, children: [
-          "Meeting code",
-          " ",
-          /* @__PURE__ */ jsxs("span", { className: "font-mono text-accent", children: [
-            meetingCode.slice(0, 3),
-            "-",
-            meetingCode.slice(3)
-          ] })
-        ] }),
+        <div key="meeting-code" className="ds-meeting-code-box"><div><span>Meeting code</span><strong>{formatMeetingCode(meetingCode)}</strong></div><button type="button" onClick={() => void copy(formatMeetingCode(meetingCode), "code")}>{copied === "code" ? <Check size={15} /> : <Copy size={15} />}{copied === "code" ? "Copied" : "Copy code"}</button></div>,
+        isHost && <div key="meeting-link" className="ds-meeting-share-box"><div><strong>Invite people with a link</strong><p>Create a link guests can open to reach this meeting.</p></div>{linkCreated ? <><input aria-label="Meeting invite link" readOnly value={inviteLink} onFocus={(event) => event.target.select()} /><button type="button" onClick={() => void copy(inviteLink, "link")}>{copied === "link" ? <Check size={15} /> : <Copy size={15} />}{copied === "link" ? "Copied" : "Copy link"}</button></> : <button type="button" onClick={() => setLinkCreated(true)}><Link2 size={15} />Create invite link</button>}</div>,
         /* @__PURE__ */ jsxs(
           "div",
           {

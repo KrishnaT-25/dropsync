@@ -15,24 +15,36 @@ function normalizeMeetingCode(input) {
   return input.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(0, 6);
 }
 function isValidMeetingCode(code) {
-  return /^[A-Z0-9]{6}$/.test(normalizeMeetingCode(code));
+  return /^[A-Z0-9]{6}$/.test(String(code).trim().toUpperCase().replace(/^([A-Z0-9]{3})-([A-Z0-9]{3})$/, "$1$2"));
 }
-function parseMeetingCodeInput(input) {
+function parseMeetingLink(input) {
   const trimmed = input.trim();
   try {
     const url = new URL(trimmed);
-    const meetMatch = url.pathname.match(/\/meet\/([a-zA-Z0-9-]+)/i);
-    if (meetMatch?.[1]) return normalizeMeetingCode(meetMatch[1]);
-    const q = url.searchParams.get("meet");
-    if (q) return normalizeMeetingCode(q);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+    const meetMatch = url.pathname.match(/^\/meet\/([a-zA-Z0-9]{3}-?[a-zA-Z0-9]{3})\/?$/i);
+    if (meetMatch?.[1] && isValidMeetingCode(meetMatch[1])) return normalizeMeetingCode(meetMatch[1]);
+    if (url.pathname === "/" && isValidMeetingCode(url.searchParams.get("meet") ?? "")) {
+      return normalizeMeetingCode(url.searchParams.get("meet"));
+    }
   } catch {
   }
-  return normalizeMeetingCode(trimmed);
+  return "";
+}
+function parseMeetingCodeInput(input) {
+  const trimmed = input.trim();
+  return isValidMeetingCode(trimmed) ? normalizeMeetingCode(trimmed) : parseMeetingLink(trimmed);
+}
+function buildMeetingLink(code, origin) {
+  if (!isValidMeetingCode(code)) return "";
+  return new URL(`/meet/${normalizeMeetingCode(code)}`, origin).toString();
 }
 export {
+  buildMeetingLink,
   formatMeetingCode,
   generateMeetingCode,
   isValidMeetingCode,
   normalizeMeetingCode,
+  parseMeetingLink,
   parseMeetingCodeInput
 };

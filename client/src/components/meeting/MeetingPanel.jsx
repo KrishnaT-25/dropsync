@@ -3,6 +3,7 @@ import { Copy, Check } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMeeting } from "../../context/MeetingContext";
 import { useMeetingSession } from "../../context/MeetingSessionContext";
+import { buildMeetingLink, formatMeetingCode } from "../../utils/meetingCode";
 import { HostParticipantMenu } from "./HostParticipantMenu";
 import { MeetingControls } from "./MeetingControls";
 import { FullscreenExitHint, VideoTile } from "./VideoTile";
@@ -21,12 +22,12 @@ function pickStage(tiles, pinnedId) {
 function MeetingPanel() {
   const { error, tiles, localVideoRef, screenVideoRef } = useMeeting();
   const { meeting, isHost, activityLog, participantId, rateLimitHint } = useMeetingSession();
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState("");
   const [browserFs, setBrowserFs] = useState(false);
   const [pinnedId, setPinnedId] = useState(null);
   const stageShellRef = useRef(null);
   const prevScreenIdRef = useRef(null);
-  const inviteUrl = meeting ? `${window.location.origin}/meet/${meeting.code}` : "";
+  const inviteUrl = meeting ? buildMeetingLink(meeting.code, window.location.origin) : "";
   const activeScreen = useMemo(() => pickScreenStage(tiles), [tiles]);
   useEffect(() => {
     const id = activeScreen?.id ?? null;
@@ -40,12 +41,12 @@ function MeetingPanel() {
     if (!stageTile) return tiles;
     return tiles.filter((t) => t.id !== stageTile.id);
   }, [tiles, stageTile]);
-  const copyInvite = async () => {
-    if (!inviteUrl) return;
+  const copy = async (value, kind) => {
+    if (!value) return;
     try {
-      await navigator.clipboard.writeText(inviteUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      await navigator.clipboard.writeText(value);
+      setCopied(kind);
+      window.setTimeout(() => setCopied(""), 1500);
     } catch {
     }
   };
@@ -108,24 +109,9 @@ function MeetingPanel() {
               isHost ? " \xB7 Host" : ""
             ] })
           ] }),
-          /* @__PURE__ */ jsxs("div", { className: "flex items-center gap-2", children: [
-            /* @__PURE__ */ jsxs(
-              "button",
-              {
-                type: "button",
-                onClick: () => void copyInvite(),
-                className: "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition",
-                style: {
-                  borderColor: "var(--border)",
-                  color: "var(--text-secondary)",
-                  background: "var(--bg-card)"
-                },
-                children: [
-                  copied ? /* @__PURE__ */ jsx(Check, { className: "h-3.5 w-3.5 text-accent" }) : /* @__PURE__ */ jsx(Copy, { className: "h-3.5 w-3.5" }),
-                  copied ? "Copied" : "Copy link"
-                ]
-              }
-            ),
+          /* @__PURE__ */ jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
+            isHost && <button key="copy-code" type="button" onClick={() => void copy(formatMeetingCode(meeting.code), "code")} className="ds-meeting-copy-button">{copied === "code" ? <Check size={14} /> : <Copy size={14} />}{copied === "code" ? "Copied" : "Copy code"}</button>,
+            isHost && <button key="copy-link" type="button" onClick={() => void copy(inviteUrl, "link")} className="ds-meeting-copy-button">{copied === "link" ? <Check size={14} /> : <Copy size={14} />}{copied === "link" ? "Copied" : "Copy link"}</button>,
             /* @__PURE__ */ jsxs("span", { className: "inline-flex items-center gap-2 text-xs", style: { color: "var(--text-secondary)" }, children: [
               /* @__PURE__ */ jsxs("span", { className: "relative flex h-2 w-2", children: [
                 /* @__PURE__ */ jsx("span", { className: "absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-60" }),

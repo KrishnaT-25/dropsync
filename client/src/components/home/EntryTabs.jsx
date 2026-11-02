@@ -1,10 +1,10 @@
-import { Check, Clock3, LockKeyhole, PlusCircle, UsersRound, Video } from "lucide-react";
+import { Check, Clock3, Link2, LockKeyhole, PlusCircle, UsersRound, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useRoom } from "../../context/RoomContext";
 import * as api from "../../services/api";
 import * as meetingApi from "../../services/meetingApi";
-import { formatMeetingCode, isValidMeetingCode, parseMeetingCodeInput } from "../../utils/meetingCode";
+import { formatMeetingCode, isValidMeetingCode, normalizeMeetingCode, parseMeetingLink } from "../../utils/meetingCode";
 import { isValidRoomCode, normalizeRoomCode } from "../../utils/roomCode";
 
 const MEETING_STORAGE_KEY = "dropsync-meeting-session";
@@ -45,7 +45,9 @@ export function EntryTabs({ view }) {
   const [displayName, setDisplayName] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
   const [needPassword, setNeedPassword] = useState(false);
-  const [meetInput, setMeetInput] = useState("");
+  const [meetMethod, setMeetMethod] = useState("code");
+  const [meetCodeInput, setMeetCodeInput] = useState("");
+  const [meetLinkInput, setMeetLinkInput] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -53,7 +55,7 @@ export function EntryTabs({ view }) {
     if (preset) setJoinCode(normalizeRoomCode(preset));
     if (searchParams.get("needPassword") === "1") setNeedPassword(true);
     const meet = searchParams.get("meetCode");
-    if (meet && isValidMeetingCode(meet)) setMeetInput(formatMeetingCode(meet));
+    if (meet && isValidMeetingCode(meet)) { setMeetCodeInput(formatMeetingCode(meet)); setMeetMethod("code"); }
   }, [searchParams]);
   const create = async (event) => {
     event.preventDefault(); setError("");
@@ -86,14 +88,14 @@ export function EntryTabs({ view }) {
   };
   const joinMeeting = (event) => {
     event.preventDefault(); setError("");
-    const code = parseMeetingCodeInput(meetInput);
-    if (!isValidMeetingCode(code)) return setError("Enter a valid meeting link or 6-character code.");
+    const code = meetMethod === "code" ? meetCodeInput : parseMeetingLink(meetLinkInput);
+    if (!isValidMeetingCode(code)) return setError(meetMethod === "code" ? "Enter a valid 6-character meeting code." : "Enter a valid DropSync meeting link.");
     sessionStorage.removeItem(MEETING_STORAGE_KEY);
-    navigate(`/meet/${code}`);
+    navigate(`/meet/${normalizeMeetingCode(code)}`);
   };
   if (view === "recent") return <RecentRooms />;
   if (view === "meet") return <div className="ds-form-view"><div className="ds-form-heading"><Video className="ds-heading-icon" size={40} /><h1>Video <em>Meetings</em></h1><p>Connect face to face in a temporary call.</p></div>
-    <div className="ds-form-card"><button className="ds-primary-button" disabled={busy} onClick={startMeeting}>{busy ? "Starting..." : "Start a Meeting"}</button><div className="ds-divider-text">or join an existing meeting</div><form onSubmit={joinMeeting}><label htmlFor="meeting-code">Meeting link or code</label><input id="meeting-code" className="ds-field" value={meetInput} onChange={(e) => setMeetInput(e.target.value)} placeholder="ABC-DEF" /><button className="ds-secondary-button" type="submit">Join Meeting</button></form>{error && <p className="ds-form-error">{error}</p>}</div></div>;
+    <div className="ds-form-card ds-meeting-entry"><button className="ds-primary-button" disabled={busy} onClick={startMeeting}>{busy ? "Creating..." : "Create a Meeting"}</button><p className="ds-meeting-entry-note">Get a meeting code and an invite link to share before the call starts.</p><div className="ds-divider-text">or join an existing meeting</div><div className="ds-meeting-join-modes" role="group" aria-label="Join using"><button type="button" className={meetMethod === "code" ? "selected" : ""} aria-pressed={meetMethod === "code"} onClick={() => { setMeetMethod("code"); setError(""); }}>Meeting code</button><button type="button" className={meetMethod === "link" ? "selected" : ""} aria-pressed={meetMethod === "link"} onClick={() => { setMeetMethod("link"); setError(""); }}><Link2 size={15} />Meeting link</button></div><form onSubmit={joinMeeting}>{meetMethod === "code" ? <><label htmlFor="meeting-code">Meeting Code</label><input id="meeting-code" className="ds-field ds-code-field" value={meetCodeInput} onChange={(e) => { const input = e.target.value; if (/^https?:\/\//i.test(input)) { setMeetLinkInput(input); setMeetMethod("link"); } else setMeetCodeInput(formatMeetingCode(input)); setError(""); }} placeholder="ABC-DEF" autoComplete="off" spellCheck="false" /></> : <><label htmlFor="meeting-link">Meeting Link</label><input id="meeting-link" className="ds-field" value={meetLinkInput} onChange={(e) => { setMeetLinkInput(e.target.value); setError(""); }} placeholder={`${window.location.origin}/meet/ABCDEF`} autoComplete="off" spellCheck="false" /></>}<button className="ds-secondary-button" type="submit">Join Meeting</button></form>{error && <p className="ds-form-error">{error}</p>}</div></div>;
   const isCreate = view === "create";
   return <div className="ds-form-view"><div className="ds-form-heading">{isCreate ? <PlusCircle className="ds-heading-icon" size={42} /> : <UsersRound className="ds-heading-icon" size={42} />}<h1>{isCreate ? <>Create a <em>Room</em></> : <>Join a <em>Room</em></>}</h1><p>{isCreate ? "Set up your collaboration space in seconds." : "Enter a room code shared by your teammate."}</p></div>
     {isCreate ? <form className="ds-form-card" onSubmit={create}>

@@ -278,6 +278,33 @@ html:root .ds-empty { color: var(--text-secondary); border-color: var(--border-s
 html:root .ds-empty svg { color: var(--color-accent); }
 html:root .ds-empty h2 { color: var(--text-primary); }
 
+/* Video meeting invites */
+html:root .ds-meeting-entry-note { margin: 12px 0 0; color: var(--text-secondary); font-size: 12px; text-align: center; }
+html:root .ds-meeting-join-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 18px 0 20px; }
+html:root .ds-meeting-join-modes button,
+html:root .ds-meeting-code-box button,
+html:root .ds-meeting-share-box button,
+html:root .ds-meeting-copy-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  border: 1px solid var(--border-strong); border-radius: 9px; padding: 10px 13px;
+  color: var(--text-secondary); background: var(--bg-card); font: inherit;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+}
+html:root .ds-meeting-join-modes button.selected { border-color: var(--color-accent); color: var(--color-accent); background: var(--teal-soft); }
+html:root .ds-meeting-join-modes button:hover,
+html:root .ds-meeting-code-box button:hover,
+html:root .ds-meeting-share-box button:hover,
+html:root .ds-meeting-copy-button:hover { border-color: var(--color-accent); color: var(--color-accent); }
+html:root .ds-meeting-code-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 15px; margin: 16px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elevated); }
+html:root .ds-meeting-code-box > div { display: flex; flex-direction: column; gap: 2px; }
+html:root .ds-meeting-code-box span { color: var(--text-muted); font: 500 10px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+html:root .ds-meeting-code-box strong { color: var(--text-primary); font: 600 19px var(--font-mono); letter-spacing: .09em; }
+html:root .ds-meeting-share-box { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 18px; padding: 15px; border: 1px solid var(--border); border-radius: 10px; }
+html:root .ds-meeting-share-box > div { flex: 1 1 100%; }
+html:root .ds-meeting-share-box strong { color: var(--text-primary); font-size: 13px; }
+html:root .ds-meeting-share-box p { margin: 3px 0 0; color: var(--text-secondary); font-size: 12px; }
+html:root .ds-meeting-share-box input { flex: 1 1 230px; min-width: 0; border: 1px solid var(--border-strong); border-radius: 8px; padding: 10px; color: var(--text-primary); background: var(--bg-elevated); font: 12px var(--font-mono); }
+
 /* Room dashboard */
 html:root .ds-dashboard {
   width: min(calc(100% - 36px), 1540px);
