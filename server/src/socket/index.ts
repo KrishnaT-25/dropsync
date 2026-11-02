@@ -14,6 +14,7 @@ import type { ActivityItem } from '../types.js'
 import { toPublicRoom } from '../utils/publicRoom.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
 import { registerMeetingSocketHandlers } from './meetings.js'
+import { trackSocketCleanup } from './cleanupTasks.js'
 
 const joinSchema = z.object({
   code: z.string(),
@@ -245,19 +246,21 @@ export function createSocketServer(
       roomSession = null
     })
 
-    socket.on('disconnect', async () => {
-      if (!roomSession) return
+    socket.on('disconnect', () => {
+      trackSocketCleanup((async () => {
+        if (!roomSession) return
 
-      const { code, participantId } = roomSession
-      const room = await roomStore.unbindSocket(code, participantId, socket.id)
-      if (room) {
-        io.to(code).emit('room-state', toPublicRoom(room))
-      } else {
-        const current = await roomStore.getRoom(code)
-        if (current) io.to(code).emit('room-state', toPublicRoom(current))
-        else io.to(code).emit('room-expired')
-      }
-      roomSession = null
+        const { code, participantId } = roomSession
+        const room = await roomStore.unbindSocket(code, participantId, socket.id)
+        if (room) {
+          io.to(code).emit('room-state', toPublicRoom(room))
+        } else {
+          const current = await roomStore.getRoom(code)
+          if (current) io.to(code).emit('room-state', toPublicRoom(current))
+          else io.to(code).emit('room-expired')
+        }
+        roomSession = null
+      })())
     })
   })
 

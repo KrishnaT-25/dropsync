@@ -8,6 +8,7 @@ import {
 import { meetingStore, toPublicMeeting } from '../store/meetingStore.js'
 import type { MeetingEndedReason } from '../types.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
+import { trackSocketCleanup } from './cleanupTasks.js'
 
 const joinMeetingSchema = z.object({
   code: z.string(),
@@ -333,7 +334,7 @@ export function registerMeetingSocketHandlers(io: Server, socket: Socket) {
   }
 
   socket.on('disconnect', () => {
-    void handleDisconnect()
+    trackSocketCleanup(handleDisconnect())
   })
 
   return {

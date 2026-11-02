@@ -6,6 +6,7 @@ import { createApp } from '../app.js'
 import { connectRedis, disconnectRedis, getRedis } from '../db/redis.js'
 import { connectMongo, disconnectMongo } from '../db/mongo.js'
 import { createSocketServer } from '../socket/index.js'
+import { waitForSocketCleanups } from '../socket/cleanupTasks.js'
 import { roomStore } from '../store/roomStore.js'
 import type { Server } from 'socket.io'
 
@@ -53,6 +54,7 @@ export async function stopTestServer(): Promise<void> {
   await new Promise<void>((resolve) => {
     current.io.close(() => resolve())
   })
+  await waitForSocketCleanups()
   if (current.httpServer.listening) {
     await new Promise<void>((resolve, reject) => {
       current.httpServer.close((err) => (err ? reject(err) : resolve()))
