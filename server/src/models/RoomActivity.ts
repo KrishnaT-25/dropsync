@@ -19,6 +19,7 @@ const schema = new Schema<RoomActivityDocument>(
   { collection: 'room_activities', versionKey: false },
 )
 schema.index({ roomCode: 1, timestamp: 1 })
+schema.index({ roomCode: 1, id: 1 }, { unique: true })
 
 export const RoomActivity =
   (mongoose.models.RoomActivity as mongoose.Model<RoomActivityDocument> | undefined) ??

@@ -23,6 +23,7 @@ const joinSchema = z.object({
 })
 
 const activitySchema = z.object({
+  id: z.string().uuid().optional(),
   type: z.enum(['message', 'link', 'clipboard', 'code', 'meeting']),
   content: z.string().min(1).max(10000),
   fileMeta: z
@@ -48,6 +49,7 @@ const fileSignalSchema = z.object({
 interface RoomSocketSession {
   code: string
   participantId: string
+  senderName: string
 }
 
 let roomIo: Server | null = null
@@ -124,7 +126,8 @@ export function createSocketServer(
         return
       }
 
-      roomSession = { code, participantId: parsed.data.participantId }
+      roomSession = { code, participantId: parsed.data.participantId,
+        senderName: room.participants.find((person) => person.id === parsed.data.participantId)?.name ?? 'Guest' }
       await socket.join(code)
 
       ack?.({ ok: true, room: toPublicRoom(room) })
@@ -153,24 +156,20 @@ export function createSocketServer(
         return
       }
 
-      const room = await roomStore.getRoom(roomSession.code, false)
-      if (!room) {
-        ack?.({ ok: false, error: 'Room not found' })
-        return
-      }
-
-      const participant = room.participants.find((p) => p.id === roomSession!.participantId)
       const activity = await roomStore.addActivity(roomSession.code, {
+        id: parsed.data.id,
         type: parsed.data.type,
         content: parsed.data.content,
-        sender: participant?.name ?? 'Guest',
+        sender: roomSession.senderName,
         senderId: roomSession.participantId,
       })
 
-      if (activity) {
-        io.to(roomSession.code).emit('activity', activity)
+      if (!activity) {
+        ack?.({ ok: false, error: 'Room expired or unavailable' })
+        return
       }
-      ack?.({ ok: true })
+      io.to(roomSession.code).emit('activity', activity)
+      ack?.({ ok: true, activity })
     })
 
     socket.on('system-activity', async (content: string) => {

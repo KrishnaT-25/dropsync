@@ -201,12 +201,21 @@ export class RoomStore {
     return this.unbindSocket(code, participantId)
   }
 
-  async addActivity(code: string, input: Omit<ActivityItem, 'id' | 'timestamp'>): Promise<ActivityItem | null> {
-    const room = await this.getRoom(code, false)
-    if (!room) return null
-    const item: ActivityItem = { ...input, id: uuidv4(), timestamp: new Date().toISOString() }
-    await RoomActivity.create({ roomCode: room.code, ...item })
-    return item
+  async addActivity(code: string, input: Omit<ActivityItem, 'id' | 'timestamp'> & { id?: string }): Promise<ActivityItem | null> {
+    const normalized = normalizeRoomCode(code)
+    const active = await DurableRoom.exists({ code: normalized, status: 'active', expiresAt: { $gt: new Date() } })
+    if (!active) return null
+    const item: ActivityItem = { ...input, id: input.id ?? uuidv4(), timestamp: new Date().toISOString() }
+    try {
+      await RoomActivity.create({ roomCode: normalized, ...item })
+      return item
+    } catch (error) {
+      if ((error as { code?: number }).code !== 11000) throw error
+      const existing = await RoomActivity.findOne({ roomCode: normalized, id: item.id }).lean()
+      if (!existing) throw error
+      return { id: existing.id, type: existing.type, content: existing.content,
+        sender: existing.sender, senderId: existing.senderId, timestamp: existing.timestamp, fileMeta: existing.fileMeta }
+    }
   }
 
   async expireRoom(code: string): Promise<void> {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import {
   connectClient,
@@ -67,6 +68,30 @@ describe('socket isolation and host ACL', () => {
 
     socketA.disconnect()
     socketB.disconnect()
+  })
+
+  it('confirms a client message id and stores a retry only once', async () => {
+    const created = await h.agent.post('/api/rooms').send({})
+    const roomSocket = connectClient(h.baseUrl)
+    await waitConnected(roomSocket)
+    await emitAck(roomSocket, 'join-room', {
+      code: created.body.room.code,
+      participantId: created.body.participantId,
+      accessToken: created.body.accessToken,
+    })
+
+    const id = randomUUID()
+    const payload = { id, type: 'message', content: 'one quick message' }
+    const first = await emitAck<{ ok: boolean; activity: { id: string } }>(roomSocket, 'activity', payload)
+    const retry = await emitAck<{ ok: boolean; activity: { id: string } }>(roomSocket, 'activity', payload)
+    const response = await h.agent.get(`/api/rooms/${created.body.room.code}`)
+      .set('Authorization', `Bearer ${created.body.accessToken}`)
+
+    expect(first.ok).toBe(true)
+    expect(first.activity.id).toBe(id)
+    expect(retry.activity.id).toBe(id)
+    expect(response.body.room.activities.filter((item: { id: string }) => item.id === id)).toHaveLength(1)
+    roomSocket.disconnect()
   })
 
   it('does not leak meeting events into room channels', async () => {
