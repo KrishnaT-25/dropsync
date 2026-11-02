@@ -43,7 +43,7 @@ function FileRow({
             actorLabel(item, selfParticipantId),
             " \xB7 file"
           ] }),
-          /* @__PURE__ */ jsx("span", { className: "text-[11px]", style: { color: "var(--text-muted)" }, children: formatTime(item.timestamp) })
+          /* @__PURE__ */ jsx("span", { className: "text-[11px]", style: { color: "var(--text-muted)" }, children: item.pending ? "Sending…" : formatTime(item.timestamp) })
         ] }),
         /* @__PURE__ */ jsxs("div", { className: "flex items-start gap-3", children: [
           /* @__PURE__ */ jsx(
@@ -133,7 +133,7 @@ function ActivityRow({
               item.sender,
               " \xB7 clipboard"
             ] }),
-            /* @__PURE__ */ jsx("span", { className: "text-[11px]", style: { color: "var(--text-muted)" }, children: formatTime(item.timestamp) })
+            /* @__PURE__ */ jsx("span", { className: "text-[11px]", style: { color: "var(--text-muted)" }, children: item.pending ? "Sending…" : formatTime(item.timestamp) })
           ] }),
           /* @__PURE__ */ jsx("p", { className: "line-clamp-3 break-all text-sm", style: { color: "var(--text-primary)" }, children: item.content })
         ]
@@ -155,7 +155,7 @@ function ActivityRow({
               item.sender,
               " \xB7 code"
             ] }),
-            /* @__PURE__ */ jsx("span", { className: "text-[11px]", style: { color: "var(--text-muted)" }, children: formatTime(item.timestamp) })
+            /* @__PURE__ */ jsx("span", { className: "text-[11px]", style: { color: "var(--text-muted)" }, children: item.pending ? "Sending…" : formatTime(item.timestamp) })
           ] }),
           /* @__PURE__ */ jsx(
             "pre",
@@ -184,7 +184,7 @@ function ActivityRow({
       children: [
         /* @__PURE__ */ jsxs("div", { className: "mb-1 flex items-center justify-between gap-2", children: [
           /* @__PURE__ */ jsx("span", { className: "text-xs font-medium text-accent", children: item.sender }),
-          /* @__PURE__ */ jsx("span", { className: "text-[11px]", style: { color: "var(--text-muted)" }, children: formatTime(item.timestamp) })
+          /* @__PURE__ */ jsx("span", { className: "text-[11px]", style: { color: "var(--text-muted)" }, children: item.pending ? "Sending…" : formatTime(item.timestamp) })
         ] }),
         isLink ? /* @__PURE__ */ jsx(
           "a",

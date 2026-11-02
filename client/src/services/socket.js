@@ -32,8 +32,13 @@ function joinRoomSocket(code, participantId, accessToken) {
 }
 function emitActivity(payload) {
   return new Promise((resolve) => {
-    getSocket().emit("activity", payload, (ack) => {
-      resolve(ack ?? { ok: true });
+    const instance = getSocket();
+    if (!instance.connected) {
+      resolve({ ok: false, error: "Connection lost. Try again." });
+      return;
+    }
+    instance.timeout(10000).emit("activity", payload, (error, ack) => {
+      resolve(error ? { ok: false, error: "Could not confirm the message. Try again." } : ack ?? { ok: false, error: "No response from server" });
     });
   });
 }

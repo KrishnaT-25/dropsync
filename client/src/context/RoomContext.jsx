@@ -199,15 +199,29 @@ function RoomProvider({ children }) {
     leaveRoom();
   }, [leaveRoom]);
 
-  const broadcast = useCallback(async (type, content) => {
-    if (roomRef.current?.status !== "active" || !socket.isSocketConnected()) return;
-    const trimmed = content.trim();
-    if (!trimmed) return;
-    const ack = await socket.emitActivity({ type, content: trimmed });
-    if (ack?.code === "rate_limited") {
-      setRateLimitHint("Slow down a bit");
-      window.setTimeout(() => setRateLimitHint(null), 3000);
+  const broadcast = useCallback(async (type, content, clientId = crypto.randomUUID()) => {
+    const current = roomRef.current;
+    if (current?.status !== "active" || !socket.isSocketConnected()) {
+      setRateLimitHint("Connection lost. Try again.");
+      return false;
     }
+    const trimmed = content.trim();
+    if (!trimmed) return false;
+    const optimistic = {
+      id: clientId, type, content: trimmed,
+      sender: current.participants.find((person) => person.id === participantRef.current)?.name ?? "You",
+      senderId: participantRef.current, timestamp: new Date(), pending: true
+    };
+    setRoom((prev) => prev?.code === current.code ? { ...prev, activities: mergeActivity(prev.activities, optimistic) } : prev);
+    const ack = await socket.emitActivity({ id: clientId, type, content: trimmed });
+    if (ack?.ok && ack.activity) {
+      setRoom((prev) => prev?.code === current.code ? { ...prev, activities: mergeActivity(prev.activities, { ...ack.activity, timestamp: new Date(ack.activity.timestamp) }) } : prev);
+      return true;
+    }
+    setRoom((prev) => prev?.code === current.code ? { ...prev, activities: prev.activities.filter((item) => item.id !== clientId || !item.pending) } : prev);
+    setRateLimitHint(ack?.error ?? "Message not sent. Try again.");
+    window.setTimeout(() => setRateLimitHint(null), 3000);
+    return false;
   }, []);
 
   const sendFile = useCallback(async (file) => {
@@ -243,9 +257,9 @@ function RoomProvider({ children }) {
     recoveryKey: room ? stored(room.code)?.recoveryKey ?? null : null,
     recoveryKeyForCode: (code) => stored(code)?.recoveryKey ?? null,
     createRoom, joinRoom, restoreRoom, refreshRoom, leaveRoom, recoverRoom, deleteRoom,
-    sendMessage: (content) => broadcast(detectLink(content), content),
+    sendMessage: (content, clientId) => broadcast(detectLink(content), content, clientId),
     sendClipboard: (content) => broadcast("clipboard", content),
-    sendCodeSnippet: (content) => broadcast("code", content),
+    sendCodeSnippet: (content, clientId) => broadcast("code", content, clientId),
     sendFile, downloadFile,
   }}>{children}</RoomContext.Provider>;
 }

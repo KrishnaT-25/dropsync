@@ -13,16 +13,21 @@ function MessageInput({
   const [clipboardStatus, setClipboardStatus] = useState(null);
   const [dragActive, setDragActive] = useState(false);
   const fileInputRef = useRef(null);
-  const handleSubmit = (e) => {
+  const retryRef = useRef(null);
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const trimmed = value.trim();
     if (!trimmed) return;
-    if (mode === "code") {
-      onSendCode(trimmed);
-    } else {
-      onSend(trimmed);
-    }
+    const id = retryRef.current?.content === trimmed ? retryRef.current.id : crypto.randomUUID();
+    retryRef.current = null;
     setValue("");
+    let sent = false;
+    try { sent = await (mode === "code" ? onSendCode(trimmed, id) : onSend(trimmed, id)); }
+    catch { sent = false; }
+    if (!sent) {
+      retryRef.current = { content: trimmed, id };
+      setValue((current) => current || trimmed);
+    }
   };
   const handleClipboard = async () => {
     setClipboardStatus(null);

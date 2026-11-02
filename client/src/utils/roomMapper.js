@@ -28,10 +28,12 @@ function mapApiRoom(apiRoom, participantId) {
   };
 }
 function mergeActivity(existing, incoming) {
-  if (existing.some((a) => a.id === incoming.id)) {
-    return existing;
-  }
-  return [...existing, incoming];
+  const index = existing.findIndex((a) => a.id === incoming.id);
+  if (index === -1) return [...existing, incoming];
+  if (!existing[index].pending) return existing;
+  const merged = [...existing];
+  merged[index] = incoming;
+  return merged;
 }
 function mergeFileMeta(server, local) {
   if (!server && !local) return void 0;
@@ -71,7 +73,7 @@ function applyRoomState(prev, apiRoom, participantId) {
         ...activity,
         fileMeta: mergeFileMeta(activity.fileMeta, local)
       };
-    })
+    }).concat(prev.activities.filter((activity) => activity.pending && !next.activities.some((serverActivity) => serverActivity.id === activity.id)))
   };
 }
 function markYouParticipant(participants, participantId) {
