@@ -40,7 +40,7 @@ export function HomePage() {
     <main className={`ds-home-main ${view === "home" ? "ds-home-hero" : "ds-home-form"}`}>
       {view === "home" ? <>
         <div className="ds-hero-copy">
-          <span className="ds-eyebrow">YOUR SPACE TO CREATE TOGETHER</span>
+          <span className="ds-eyebrow">01 — YOUR WORKSPACE</span>
           <h1>Share · Collaborate · Sync<br />in <span>Real-Time</span></h1>
           <p>A temporary space for files, code, links and conversations.</p>
         </div>

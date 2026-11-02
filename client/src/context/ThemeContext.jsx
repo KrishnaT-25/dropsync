@@ -13,7 +13,7 @@ function getInitialTheme() {
     const stored = localStorage.getItem("dropsync-theme");
     if (stored === "light" || stored === "dark") return stored;
   } catch { /* The theme still works when browser storage is blocked. */ }
-  return "dark";
+  return "light";
 }
 function ThemeProvider({ children }) {
   const [theme, setThemeState] = useState(getInitialTheme);

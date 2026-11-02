@@ -1,8 +1,6 @@
 import { jsx, jsxs } from "react/jsx-runtime";
-import { BackgroundMesh } from "./BackgroundMesh";
 function AppShell({ children, centered = false }) {
   return /* @__PURE__ */ jsxs("div", { className: "ds-app-shell relative min-h-screen", style: { background: "var(--bg)" }, children: [
-    /* @__PURE__ */ jsx(BackgroundMesh, {}),
     /* @__PURE__ */ jsx(
       "div",
       {

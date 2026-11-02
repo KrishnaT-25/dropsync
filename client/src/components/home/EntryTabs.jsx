@@ -24,7 +24,7 @@ function RecentRooms() {
     return () => { cancelled = true; };
   }, []);
   return <div className="ds-recent-view">
-    <div className="ds-form-heading"><Clock3 className="ds-heading-icon" size={39} /><h1>Recent Rooms</h1><p>Return to rooms you joined in this browser.</p></div>
+    <div className="ds-form-heading"><Clock3 className="ds-heading-icon" size={39} /><h1>Recent <em>Rooms</em></h1><p>Return to rooms you joined in this browser.</p></div>
     <div className="ds-recent-list">{rooms.length ? rooms.map((room) => <button key={room.code} className="ds-recent-item" onClick={() => navigate(`/room/${room.code}`)}>
       <span className="ds-recent-avatar"><UsersRound size={22} /></span><span className="ds-recent-info"><strong>{room.name || room.code}</strong><small>{room.code} · {room.participants.length} members · {room.activities.length} updates</small></span>
       <span className={`ds-status ${room.status === "active" ? "is-active" : ""}`}>{room.status === "active" ? "Live" : "Recoverable"}</span>
@@ -92,10 +92,10 @@ export function EntryTabs({ view }) {
     navigate(`/meet/${code}`);
   };
   if (view === "recent") return <RecentRooms />;
-  if (view === "meet") return <div className="ds-form-view"><div className="ds-form-heading"><Video className="ds-heading-icon" size={40} /><h1>Video Meetings</h1><p>Connect face to face in a temporary call.</p></div>
+  if (view === "meet") return <div className="ds-form-view"><div className="ds-form-heading"><Video className="ds-heading-icon" size={40} /><h1>Video <em>Meetings</em></h1><p>Connect face to face in a temporary call.</p></div>
     <div className="ds-form-card"><button className="ds-primary-button" disabled={busy} onClick={startMeeting}>{busy ? "Starting..." : "Start a Meeting"}</button><div className="ds-divider-text">or join an existing meeting</div><form onSubmit={joinMeeting}><label htmlFor="meeting-code">Meeting link or code</label><input id="meeting-code" className="ds-field" value={meetInput} onChange={(e) => setMeetInput(e.target.value)} placeholder="ABC-DEF" /><button className="ds-secondary-button" type="submit">Join Meeting</button></form>{error && <p className="ds-form-error">{error}</p>}</div></div>;
   const isCreate = view === "create";
-  return <div className="ds-form-view"><div className="ds-form-heading">{isCreate ? <PlusCircle className="ds-heading-icon" size={42} /> : <UsersRound className="ds-heading-icon" size={42} />}<h1>{isCreate ? "Create a Room" : "Join a Room"}</h1><p>{isCreate ? "Set up your collaboration space in seconds." : "Enter a room code shared by your teammate."}</p></div>
+  return <div className="ds-form-view"><div className="ds-form-heading">{isCreate ? <PlusCircle className="ds-heading-icon" size={42} /> : <UsersRound className="ds-heading-icon" size={42} />}<h1>{isCreate ? <>Create a <em>Room</em></> : <>Join a <em>Room</em></>}</h1><p>{isCreate ? "Set up your collaboration space in seconds." : "Enter a room code shared by your teammate."}</p></div>
     {isCreate ? <form className="ds-form-card" onSubmit={create}>
       <label htmlFor="room-name">Room Name</label><input id="room-name" className="ds-field" value={roomName} onChange={(e) => setRoomName(e.target.value)} maxLength={60} placeholder="e.g. DSA Study Group" />
       <label className="ds-label-spaced" htmlFor="room-duration">Room Duration</label>

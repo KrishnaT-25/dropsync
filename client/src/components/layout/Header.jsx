@@ -8,8 +8,8 @@ export function Header({ onlineCount = 0, showOnline = false, rightSlot, roomNam
   const view = new URLSearchParams(search).get("view");
   return <header className="ds-header">
     <div className="ds-header-left">
-      <Link className="ds-brand" to="/" aria-label="DropSync home"><span className="ds-brand-mark"><Boxes size={22} strokeWidth={2.5} /></span><span>DropSync</span></Link>
-      {roomName && <><span className="ds-header-divider" /><span className="ds-header-room">{roomName}</span></>}
+      <Link className="ds-brand" to="/" aria-label="DropSync home"><span className="ds-brand-mark"><Boxes size={21} strokeWidth={2} /></span><span>DropSync</span></Link>
+      <span className="ds-header-divider" /><span className="ds-header-room">{roomName || "Workspace"}</span>
       {showOnline && <span className="ds-live"><span className="ds-live-dot" />Live</span>}
     </div>
     <nav className="ds-top-nav" aria-label="Main navigation">
