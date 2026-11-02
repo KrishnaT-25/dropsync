@@ -1,20 +1,100 @@
 # DropSync
 
-Ephemeral collaboration rooms — share files, text, links, clipboard, and code with built-in video meetings.
+Ephemeral collaboration for quick shares and small video calls.
+
+DropSync has two complementary flows:
+
+1. **Rooms** — short-lived spaces to share text, links, files, clipboard, and code (optional password, QR join, live activity feed).
+2. **Meet** — standalone Google Meet–style calls at `/meet/:code` with real P2P audio/video, screen share, pin/unpin, and host controls.
+
+---
+
+## Table of contents
+
+- [Stack](#stack)
+- [Features](#features)
+- [Repository layout](#repository-layout)
+- [Getting started](#getting-started)
+- [Scripts](#scripts)
+- [Architecture](#architecture)
+- [API & sockets](#api--sockets)
+- [Testing & CI](#testing--ci)
+- [Deployment](#deployment)
+- [Documentation index](#documentation-index)
+
+---
 
 ## Stack
 
-- **Frontend:** React 19, TypeScript, Vite, Tailwind CSS v4, React Router, Socket.IO client, WebRTC (local preview)
-- **Backend:** Node.js, Express, Socket.IO (signaling + real-time sync), Redis (live room state), MongoDB (room history)
-- **Contracts:** [docs/api-contract.md](docs/api-contract.md), [docs/socket-events.md](docs/socket-events.md)
+| Layer | Tech |
+|-------|------|
+| Client | React 19, JavaScript/JSX, Vite, Tailwind CSS, React Router, Socket.IO client, WebRTC |
+| Server | Node.js, Express, Socket.IO, Zod, Redis, MongoDB |
+| Realtime | Socket.IO (+ Redis adapter in production for multi-instance) |
+| Media | Browser WebRTC mesh (STUN; optional TURN) — not an SFU |
+| Files | Private Amazon S3; direct browser multipart upload/download with signed URLs |
+
+---
+
+## Features
+
+### Rooms
+
+- Create / join with 6-character codes; optional password and creator-selected lifetime (5 minutes to 24 hours)
+- 24-hour read-only recovery window; creator recovery key reopens or deletes a room
+- QR invite, expiry countdown, participant list
+- Activity feed: messages, links, clipboard, code snippets, files
+- Drag-and-drop / attach files (resumable direct S3 upload, 500 MiB per file)
+- Dark / light theme
+- Redis-backed rate limits on create/join/activity (client shows “Slow down a bit”)
+
+### Meet (standalone)
+
+- Create or join via `/meet/:code` (decoupled from rooms)
+- Live camera + microphone between participants (P2P mesh, max 6)
+- Screen share with Meet-style stage + participant strip
+- Pin / unpin any video tile
+- Mute / camera toggle; host force-mute, remove, end-for-everyone
+- Meeting activity log; mesh size capped for reliability
+
+---
+
+## Repository layout
+
+```
+DropSync/
+├── client/                 # Vite React app
+│   ├── src/
+│   │   ├── components/     # UI (room, meeting, layout, home)
+│   │   ├── context/        # Room, Meeting, MeetingSession, Theme
+│   │   ├── pages/          # Home, Room, Meet
+│   │   ├── services/       # API, sockets, fileTransfer, meetingWebRTC
+│   │   └── types/
+│   └── vercel.json         # SPA rewrites
+├── server/                 # Express + Socket.IO API
+│   ├── src/
+│   │   ├── routes/         # rooms, meetings, transfers
+│   │   ├── socket/         # room + meeting handlers
+│   │   ├── store/          # Mongo room lifecycle, Redis meeting store
+│   │   ├── services/       # rate limits, S3 multipart files, cleanup
+│   │   └── test/           # Vitest (HTTP + socket)
+│   └── vitest.config.ts
+├── docs/                   # Contracts & guides
+├── .github/workflows/      # CI and hourly cleanup caller
+├── render.yaml             # Render blueprint (API + Redis)
+└── package.json            # Root scripts (concurrently)
+```
+
+---
 
 ## Getting started
 
 ### Prerequisites
 
-- Node.js 22+
-- Redis (local or hosted)
-- MongoDB (local or hosted)
+- Node.js **22+**
+- Redis
+- MongoDB replica set (transactions are required for quota reservations)
+- Private Amazon S3 Standard bucket for recoverable files
 
 ### Install
 
@@ -26,17 +106,28 @@ npm install --prefix server
 
 ### Environment
 
-Copy `server/.env.example` to `server/.env` and set:
+Copy `server/.env.example` → `server/.env`:
 
-```
+```env
 PORT=3001
 CLIENT_ORIGIN=http://localhost:5173
-ROOM_DURATION_SECONDS=300
 REDIS_URL=redis://localhost:6379
-MONGODB_URI=mongodb://localhost:27017/dropsync
+MONGODB_URI=mongodb://localhost:27017/dropsync?replicaSet=rs0&directConnection=true
 ```
 
-The server validates env with Zod on startup and exits with a clear error if `REDIS_URL` or `MONGODB_URI` are missing or malformed.
+Storage and cleanup (see `server/.env.example` and [setup guide](docs/temporary-storage.md)):
+
+- `STUN_URLS`, `TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL`
+- `AWS_REGION`, `AWS_S3_BUCKET`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` for private S3
+- `CLEANUP_SECRET` shared with the GitHub Actions cleanup workflow
+
+Client (production / Vercel):
+
+```env
+VITE_API_URL=https://your-api.example.com
+```
+
+Locally, omit `VITE_API_URL` only if the client is proxied to the API; otherwise point it at `http://localhost:3001`.
 
 ### Run
 
@@ -44,137 +135,145 @@ The server validates env with Zod on startup and exits with a clear error if `RE
 npm run dev
 ```
 
-- Frontend: [http://localhost:5173](http://localhost:5173)
-- Backend: [http://localhost:3001](http://localhost:3001)
+- Client: http://localhost:5173
+- API: http://localhost:3001 (`GET /health`)
 
-Or run separately:
+---
 
-```bash
-npm run dev:client
-npm run dev:server
-```
-
-## Features
-
-- Landing page with **Create room** / **Join room** tabs
-- Real-time room sync via **REST + Socket.IO**
-- Room dashboard with code, QR, countdown timer, participants, and activity feed
-- **File sharing** — drag & drop, attach button, image preview, local download (metadata only; P2P transfer coming soon)
-- **Video & audio meetings** — start meeting, mute/unmute, camera on/off
-- **Screen sharing** — share screen, window, or tab
-- **In-call collaboration** — messages, links, clipboard sync, code snippets
-- Dark / light mode toggle
-
-## API
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/rooms` | Create a room |
-| GET | `/api/rooms/:code` | Get room state |
-| POST | `/api/rooms/:code/join` | Join a room |
-| GET | `/health` | Health check |
-
-Full request/response shapes: [docs/api-contract.md](docs/api-contract.md).
-
-## Socket events
-
-| Event | Direction | Description |
-|-------|-----------|-------------|
-| `join-room` | client → server | Join room channel |
-| `activity` | client → server | Share message/file/link/clipboard/code |
-| `meeting-state` | client → server | Update meeting participant state |
-| `system-activity` | client → server | Meeting system line |
-| `leave-room` | client → server | Unbind socket from room |
-| `room-state` | server → client | Full room state update |
-| `activity` | server → client | New activity item |
-| `room-expired` | server → client | Room TTL reached or emptied |
-
-Full payloads: [docs/socket-events.md](docs/socket-events.md).
-
-## Architecture
-
-```
-React Frontend
-    ↕ REST + Socket.IO
-Node.js + Express (+ Socket.IO Redis adapter)
-    ↕
-Redis (live rooms + TTL)     MongoDB (room_history on close)
-    ↕
-WebRTC Peer Connections (planned) → file transfer, video, audio, screen share
-```
-
-Active rooms are stored in Redis with native key expiry. A short expiry poller (with a Redis claim lock) emits `room-expired` and writes a `room_history` document so state survives process restarts and multiple server instances.
-
-## Deployment
-
-Provision Redis and MongoDB as managed services and point `REDIS_URL` / `MONGODB_URI` at them. Deploy the Vite client separately (static host) and set `CLIENT_ORIGIN` to that origin. Health check: `GET /health`.
-
-### Vercel (frontend) + Render (API)
-
-This is the recommended split for DropSync.
-
-#### 1. MongoDB Atlas (free)
-
-1. Create a free cluster at [cloud.mongodb.com](https://cloud.mongodb.com).
-2. Add a database user and allow network access from anywhere (`0.0.0.0/0`) for Render.
-3. Copy the connection string, e.g. `mongodb+srv://USER:PASS@cluster.../dropsync`.
-
-#### 2. Render (API + Redis)
-
-The repo includes [`render.yaml`](render.yaml).
-
-1. Go to [dashboard.render.com](https://dashboard.render.com) → **New** → **Blueprint**.
-2. Connect the `KrishnaT-25/dropsync` GitHub repo and apply the blueprint.
-3. That creates:
-   - **dropsync-api** (Node web service, root `server/`)
-   - **dropsync-redis** (Render Key Value)
-4. In **dropsync-api** → Environment, set:
-   - `MONGODB_URI` = your Atlas URI
-   - `CLIENT_ORIGIN` = your Vercel URL (set/update after step 3), e.g. `https://dropsync.vercel.app`
-   - `ROOM_DURATION_SECONDS` = `300` (already in blueprint)
-   - `REDIS_URL` is wired from the Redis service automatically
-5. Deploy and copy the API URL, e.g. `https://dropsync-api.onrender.com`.
-
-Free Render web services spin down after idle time; the first request may be slow.
-
-#### 3. Vercel (client)
-
-1. Go to [vercel.com/new](https://vercel.com/new) and import `KrishnaT-25/dropsync`.
-2. Set **Root Directory** to `client`.
-3. Framework preset: Vite. Build: `npm run build`. Output: `dist`.
-4. Environment variable:
-   - `VITE_API_URL` = `https://dropsync-api.onrender.com` (no trailing slash)
-5. Deploy. Copy the site URL and set it as `CLIENT_ORIGIN` on Render, then redeploy the API if needed.
-
-SPA routing is handled by [`client/vercel.json`](client/vercel.json).
-
-### Railway
-
-1. Create a new project and add **Redis** and **MongoDB** plugins (or external URLs).
-2. Add a service from this repo with root directory `server`.
-3. Set start command to `npm run start` (build command `npm run build`).
-4. Configure env vars: `PORT` (Railway sets this), `CLIENT_ORIGIN`, `ROOM_DURATION_SECONDS`, `REDIS_URL`, `MONGODB_URI`.
-5. Deploy the `client` build to Vercel (or similar); point `CLIENT_ORIGIN` at that URL.
-
-### Fly.io
-
-```bash
-cd server
-fly launch --no-deploy
-fly secrets set CLIENT_ORIGIN=https://your-app.fly.dev \
-  REDIS_URL=redis://... \
-  MONGODB_URI=mongodb+srv://... \
-  ROOM_DURATION_SECONDS=300
-fly deploy
-```
-
-Use Fly Redis (Upstash) or an external Redis, and MongoDB Atlas (or similar) for `MONGODB_URI`.
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start client + server |
-| `npm run build` | Production build |
-| `npm run preview` | Preview production client |
+| `npm run dev` | Client + server together |
+| `npm run dev:client` / `dev:server` | Run one side |
+| `npm run build` | Build client and server |
+| `npm test` | Server Vitest suite |
+| `npm run preview` | Preview production client build |
 
-CI (GitHub Actions) runs client oxlint, typechecks both packages, and builds both on every push and pull request.
+---
+
+## Architecture
+
+```
+┌─────────────────┐     REST + Socket.IO      ┌──────────────────────────┐
+│  React client   │ ◄──────────────────────► │  Express + Socket.IO     │
+│  WebRTC mesh    │◄──────── P2P A/V ───────►│  (signaling only for A/V)│
+└─────────────────┘                           └────────────┬─────────────┘
+                                                           │
+                                              ┌────────────┴────────────┐
+                                              ▼                         ▼
+                                         Redis (presence,          MongoDB
+                                         meetings, rate limits)    (room lifecycle,
+                                                                  activity, grants)
+
+Browser files go directly to a private S3 bucket with short signed URLs.
+```
+
+### Design choices
+
+| Topic | Choice |
+|-------|--------|
+| Meeting topology | **Mesh** WebRTC (one `RTCPeerConnection` per remote peer), capped at **6** participants |
+| File transfer | **Direct multipart** to private S3; no new file bytes pass through Express |
+| Room lifecycle | MongoDB is authoritative; Redis expiry events improve live UI timing |
+| Screen share | `RTCRtpSender.replaceTrack()` on existing video sender (no full renegotiation) |
+| Rate limits | Redis fixed windows (activity per socket; create/join by IP) |
+
+Manual two-tab A/V checklist: [docs/manual-webrtc-meeting.md](docs/manual-webrtc-meeting.md).
+
+---
+
+## API & sockets
+
+### REST (summary)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/health` | Liveness |
+| `GET` | `/api/ice-servers` | STUN/TURN config for WebRTC |
+| `POST` | `/api/rooms` | Create room |
+| `GET` | `/api/rooms/:code` | Private room state; bearer token required |
+| `GET` | `/api/rooms/:code/preview` | Public status without private content |
+| `POST` | `/api/rooms/:code/join` | Join room |
+| `POST` | `/api/rooms/:code/reopen` | Creator recovery |
+| `DELETE` | `/api/rooms/:code` | Creator early deletion |
+| `*` | `/api/rooms/:code/files/*` | Direct multipart upload and signed download |
+| `POST` | `/api/meetings` | Create meeting |
+| `GET` | `/api/meetings/:code` | Meeting state |
+| `POST` | `/api/meetings/:code/join` | Join meeting |
+| `GET` | `/api/transfers/:transferId/download` | Short-lived legacy download only |
+
+Room/file shapes: [docs/temporary-storage.md](docs/temporary-storage.md). Meeting shapes: [docs/api-contract.md](docs/api-contract.md).
+
+### Socket.IO (summary)
+
+**Rooms:** `join-room` with member token, `activity`, `leave-room`, `room-state`, `activity`, `room-expired`.
+
+**Meetings:** `join-meeting`, `meeting-media-state`, `meeting-activity`, `meeting-offer` / `meeting-answer` / `meeting-ice-candidate`, host actions (`host-mute`, `host-remove`, `host-end`), `leave-meeting`, plus `meeting-state`, `peer-joined` / `peer-left`, `force-muted`, `removed-by-host`, `meeting-ended`.
+
+Full payloads: [docs/socket-events.md](docs/socket-events.md).
+
+---
+
+## Testing & CI
+
+- **Server:** Vitest — room access, expiry/recovery, multipart metadata, concurrent quotas, cleanup retry, socket isolation, meeting host ACL.
+- **CI:** GitHub Actions — lint/build client, typecheck/build server, Redis and MongoDB replica set, required server tests.
+- **Meet A/V:** not automated in CI (flaky media permissions); use the manual guide above.
+
+```bash
+npm test
+```
+
+Requires Redis and a MongoDB replica set. Storage operations are mocked in automated tests.
+
+---
+
+## Deployment
+
+Recommended trial split: **Vercel** (client) + **Render** (API + Redis) + **MongoDB Atlas** + **Amazon S3** + **GitHub Actions cleanup**. AWS's new Free Plan may allow eligible new customers to start without a payment method, but ends after six months or when credits are exhausted; see [the storage guide](docs/temporary-storage.md).
+
+### Render (API)
+
+Blueprint: [`render.yaml`](render.yaml).
+
+1. New → Blueprint → connect this GitHub repo.
+2. Set `MONGODB_URI`, `CLIENT_ORIGIN` (your Vercel HTTPS origin, no trailing slash).
+3. `REDIS_URL` is linked from the Key Value service.
+4. Set S3 region, bucket, IAM access key variables, and `CLEANUP_SECRET`. TURN remains optional for cross-network meeting media.
+5. Add `CLEANUP_URL` and `CLEANUP_SECRET` as GitHub Actions secrets and run the hourly cleanup workflow using [the storage guide](docs/temporary-storage.md).
+
+Free Render web services sleep when idle; first request can be slow.
+
+### Vercel (client)
+
+1. Import repo; **Root Directory** = `client`.
+2. Build: `npm run build`, output `dist`.
+3. Env: `VITE_API_URL` = Render API origin.
+4. Custom domain (e.g. `dropsync1.vercel.app`) under Project → Domains; then update Render `CLIENT_ORIGIN` and redeploy API.
+
+SPA fallback: [`client/vercel.json`](client/vercel.json).
+
+### Health
+
+```bash
+curl https://YOUR-API/health
+```
+
+---
+
+## Documentation index
+
+| Doc | Contents |
+|-----|----------|
+| [docs/PROJECT.md](docs/PROJECT.md) | Deeper architecture, flows, limits |
+| [docs/temporary-storage.md](docs/temporary-storage.md) | Current room lifecycle, S3 setup, file API, cleanup |
+| [docs/api-contract.md](docs/api-contract.md) | REST contracts |
+| [docs/socket-events.md](docs/socket-events.md) | Socket.IO events |
+| [docs/manual-webrtc-meeting.md](docs/manual-webrtc-meeting.md) | Manual Meet A/V QA |
+
+---
+
+## License / status
+
+Private project (`0.1.0`). Features evolve quickly; prefer this README and `docs/` over older blog-style notes.

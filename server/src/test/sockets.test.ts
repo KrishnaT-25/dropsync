@@ -40,10 +40,12 @@ describe('socket isolation and host ACL', () => {
     await emitAck(socketA, 'join-room', {
       code: a.body.room.code,
       participantId: a.body.participantId,
+      accessToken: a.body.accessToken,
     })
     await emitAck(socketB, 'join-room', {
       code: b.body.room.code,
       participantId: b.body.participantId,
+      accessToken: b.body.accessToken,
     })
 
     const leaked = new Promise<void>((resolve, reject) => {
@@ -78,6 +80,7 @@ describe('socket isolation and host ACL', () => {
     await emitAck(roomSocket, 'join-room', {
       code: room.body.room.code,
       participantId: room.body.participantId,
+      accessToken: room.body.accessToken,
     })
     await emitAck(meetSocket, 'join-meeting', {
       code: meeting.body.meeting.code,

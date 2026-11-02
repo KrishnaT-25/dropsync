@@ -26,26 +26,39 @@ export interface Participant {
   isMuted?: boolean
   isCameraOff?: boolean
   isScreenSharing?: boolean
+  isOnline?: boolean
 }
 
 export interface RoomRecord {
   code: string
+  name?: string
   createdAt: string
   expiresAt: string
   participants: Participant[]
   activities: ActivityItem[]
   /** bcrypt hash — never expose to clients */
   passwordHash?: string
+  status?: 'active' | 'expired_recoverable' | 'deleting' | 'deleted'
+  durationMinutes?: number
+  recoveryDeadline?: string
+  storageBytes?: number
+  reservedBytes?: number
 }
 
 /** Room payload sent over REST/Socket (no password hash). */
 export interface PublicRoomRecord {
   code: string
+  name?: string
   createdAt: string
   expiresAt: string
   participants: Participant[]
   activities: ActivityItem[]
   hasPassword: boolean
+  status?: 'active' | 'expired_recoverable' | 'deleting' | 'deleted'
+  durationMinutes?: number
+  recoveryDeadline?: string
+  storageBytes?: number
+  reservedBytes?: number
 }
 
 export interface CreateRoomResponse {

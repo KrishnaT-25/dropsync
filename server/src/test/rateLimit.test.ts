@@ -48,7 +48,7 @@ describe('rate limiting', () => {
     await waitConnected(socket)
 
     const joinAck = await new Promise<{ ok: boolean }>((resolve) => {
-      socket.emit('join-room', { code, participantId }, resolve)
+      socket.emit('join-room', { code, participantId, accessToken: created.body.accessToken }, resolve)
     })
     expect(joinAck.ok).toBe(true)
 

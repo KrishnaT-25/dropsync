@@ -6,7 +6,6 @@ const optionalUrl = z.string().optional().transform((v) => (v && v.trim() ? v.tr
 const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
   CLIENT_ORIGIN: z.string().min(1).default('http://localhost:5173'),
-  ROOM_DURATION_SECONDS: z.coerce.number().int().positive().default(300),
   REDIS_URL: z
     .string({ required_error: 'REDIS_URL is required' })
     .min(1, 'REDIS_URL is required')
@@ -25,12 +24,12 @@ const envSchema = z.object({
   TURN_URL: optionalUrl,
   TURN_USERNAME: optionalUrl,
   TURN_CREDENTIAL: optionalUrl,
-  STORAGE_ENDPOINT: optionalUrl,
-  STORAGE_ACCESS_KEY: optionalUrl,
-  STORAGE_SECRET_KEY: optionalUrl,
-  STORAGE_BUCKET: optionalUrl,
-  STORAGE_REGION: z.string().optional().default('auto'),
-  STORAGE_PUBLIC_URL: optionalUrl,
+  AWS_REGION: optionalUrl,
+  AWS_S3_BUCKET: optionalUrl,
+  AWS_ACCESS_KEY_ID: optionalUrl,
+  AWS_SECRET_ACCESS_KEY: optionalUrl,
+  AWS_SESSION_TOKEN: optionalUrl,
+  CLEANUP_SECRET: optionalUrl,
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -53,10 +52,10 @@ const turnConfigured = Boolean(
 )
 
 const storageConfigured = Boolean(
-  parsed.data.STORAGE_ENDPOINT &&
-    parsed.data.STORAGE_ACCESS_KEY &&
-    parsed.data.STORAGE_SECRET_KEY &&
-    parsed.data.STORAGE_BUCKET,
+  parsed.data.AWS_REGION &&
+    parsed.data.AWS_S3_BUCKET &&
+    parsed.data.AWS_ACCESS_KEY_ID &&
+    parsed.data.AWS_SECRET_ACCESS_KEY,
 )
 
 if (!turnConfigured) {
@@ -67,17 +66,16 @@ if (!turnConfigured) {
 
 if (!storageConfigured) {
   console.warn(
-    '[storage] STORAGE_* not fully configured — file-transfer fallback will use short-lived in-memory relay on this server instance.',
+    '[storage] AWS S3 variables not fully configured — recoverable file uploads are disabled.',
   )
 }
 
 export const config = {
   port: parsed.data.PORT,
   clientOrigin: parsed.data.CLIENT_ORIGIN,
-  roomDurationSeconds: parsed.data.ROOM_DURATION_SECONDS,
   redisUrl: parsed.data.REDIS_URL,
   mongodbUri: parsed.data.MONGODB_URI,
-  /** Extra seconds kept on room data keys so history can be written after TTL markers fire. */
+  /** Meeting Redis data TTL buffer; room retention is governed by MongoDB timestamps. */
   roomDataTtlBufferSeconds: 60,
   stunUrls,
   turn: turnConfigured
@@ -89,12 +87,18 @@ export const config = {
     : null,
   storage: storageConfigured
     ? {
-        endpoint: parsed.data.STORAGE_ENDPOINT!,
-        accessKey: parsed.data.STORAGE_ACCESS_KEY!,
-        secretKey: parsed.data.STORAGE_SECRET_KEY!,
-        bucket: parsed.data.STORAGE_BUCKET!,
-        region: parsed.data.STORAGE_REGION || 'auto',
-        publicUrl: parsed.data.STORAGE_PUBLIC_URL,
+        region: parsed.data.AWS_REGION!,
+        bucket: parsed.data.AWS_S3_BUCKET!,
+        accessKey: parsed.data.AWS_ACCESS_KEY_ID!,
+        secretKey: parsed.data.AWS_SECRET_ACCESS_KEY!,
+        sessionToken: parsed.data.AWS_SESSION_TOKEN,
       }
     : null,
+  cleanupSecret: parsed.data.CLEANUP_SECRET,
+  minRoomMinutes: 5,
+  maxRoomMinutes: 1440,
+  recoveryHours: 24,
+  maxFileBytes: 500 * 1024 * 1024,
+  maxRoomBytes: 2 * 1024 * 1024 * 1024,
+  maxGlobalBytes: 8 * 1024 * 1024 * 1024,
 } as const

@@ -9,13 +9,16 @@ import {
 import { roomStore } from '../store/roomStore.js'
 import { toPublicRoom } from '../utils/publicRoom.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
+import { config } from '../config.js'
 
 export const roomsRouter = Router()
 
 const BCRYPT_ROUNDS = 10
 
 const createSchema = z.object({
+  name: z.string().trim().min(1).max(60).optional(),
   password: z.string().max(64).optional(),
+  durationMinutes: z.number().int().min(config.minRoomMinutes).max(config.maxRoomMinutes).default(5),
 })
 
 roomsRouter.post('/', async (req, res, next) => {
@@ -46,10 +49,12 @@ roomsRouter.post('/', async (req, res, next) => {
     const passwordHash =
       rawPassword.length > 0 ? await bcrypt.hash(rawPassword, BCRYPT_ROUNDS) : undefined
 
-    const result = await roomStore.createRoom(passwordHash)
+    const result = await roomStore.createRoom(passwordHash, parsed.data.durationMinutes, parsed.data.name)
     res.status(201).json({
       room: toPublicRoom(result.room),
       participantId: result.participantId,
+      accessToken: result.accessToken,
+      recoveryKey: result.recoveryKey,
     })
   } catch (err) {
     next(err)
@@ -64,16 +69,27 @@ roomsRouter.get('/:code', async (req, res, next) => {
       return
     }
 
-    const room = await roomStore.getRoom(code)
-    if (!room) {
-      res.status(404).json({ error: 'Room not found or expired' })
+    const token = String(req.header('authorization') ?? '').replace(/^Bearer\s+/i, '')
+    const authorized = await roomStore.authorize(code, token)
+    if (!authorized) {
+      res.status(401).json({ error: 'Unauthorized' })
       return
     }
-
-    res.json({ room: toPublicRoom(room) })
+    res.json({ room: toPublicRoom(authorized.room) })
   } catch (err) {
     next(err)
   }
+})
+
+roomsRouter.get('/:code/preview', async (req, res, next) => {
+  try {
+    const preview = await roomStore.preview(req.params.code)
+    if (!preview) {
+      res.status(404).json({ error: 'Room not found' })
+      return
+    }
+    res.json(preview)
+  } catch (err) { next(err) }
 })
 
 const joinSchema = z.object({
@@ -135,8 +151,33 @@ roomsRouter.post('/:code/join', async (req, res, next) => {
     res.json({
       room: toPublicRoom(result.room),
       participantId: result.participantId,
+      accessToken: result.accessToken,
     })
   } catch (err) {
     next(err)
   }
+})
+
+const recoverySchema = z.object({ recoveryKey: z.string().min(20).max(256) })
+
+roomsRouter.post('/:code/reopen', async (req, res, next) => {
+  try {
+    const parsed = recoverySchema.safeParse(req.body)
+    if (!parsed.success) { res.status(400).json({ error: 'Recovery key required' }); return }
+    const result = await roomStore.reopen(req.params.code, parsed.data.recoveryKey)
+    if (!result) { res.status(403).json({ error: 'Recovery is unavailable' }); return }
+    res.json({ room: toPublicRoom(result.room), participantId: result.participantId, accessToken: result.accessToken })
+  } catch (err) { next(err) }
+})
+
+roomsRouter.delete('/:code', async (req, res, next) => {
+  try {
+    const parsed = recoverySchema.safeParse(req.body)
+    if (!parsed.success || !(await roomStore.verifyRecoveryKey(req.params.code, parsed.data.recoveryKey))) {
+      res.status(403).json({ error: 'Invalid recovery key' })
+      return
+    }
+    await roomStore.deleteRoom(req.params.code)
+    res.status(202).json({ status: 'deleting' })
+  } catch (err) { next(err) }
 })

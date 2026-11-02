@@ -1,0 +1,48 @@
+name: Room cleanup
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLEANUP_URL: ${{ secrets.CLEANUP_URL }}
+      CLEANUP_SECRET: ${{ secrets.CLEANUP_SECRET }}
+    steps:
+      - name: Delete due rooms
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.request
+
+          url = os.environ.get('CLEANUP_URL')
+          secret = os.environ.get('CLEANUP_SECRET')
+          if not url or not secret:
+              raise SystemExit('CLEANUP_URL and CLEANUP_SECRET repository secrets are required')
+
+          for attempt in range(1, 4):
+              try:
+                  request = urllib.request.Request(
+                      url, data=b'', method='POST',
+                      headers={'Authorization': f'Bearer {secret}'},
+                  )
+                  with urllib.request.urlopen(request, timeout=180) as response:
+                      result = json.load(response)
+                  print('Cleanup:', {key: result.get(key) for key in ('deleted', 'failed', 'abandonedUploads')})
+                  if result.get('failed', 0) > 0:
+                      raise RuntimeError('Some rooms failed cleanup')
+                  break
+              except Exception as error:
+                  print(f'Cleanup attempt {attempt} failed: {error}')
+                  if attempt == 3:
+                      raise
+                  time.sleep(15)
+          PY

@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { getFallbackTransfer, storeFallbackFile } from '../services/fallbackStorage.js'
+import { getFallbackTransfer } from '../services/fallbackStorage.js'
 import { getTransferStats, recordTransfer, type TransferPath } from '../services/transferStats.js'
 
 export const transfersRouter = Router()
@@ -21,49 +21,6 @@ transfersRouter.post('/stats', (req, res) => {
   }
   recordTransfer(parsed.data.path as TransferPath)
   res.json(getTransferStats())
-})
-
-transfersRouter.post('/upload', async (req, res, next) => {
-  try {
-    const buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? [])
-    if (!buffer.length) {
-      res.status(400).json({ error: 'Empty body' })
-      return
-    }
-    if (buffer.length > 32 * 1024 * 1024) {
-      res.status(413).json({ error: 'File too large (max 32MB for fallback upload)' })
-      return
-    }
-
-    const rawName = String(req.header('x-file-name') ?? 'file.bin')
-    let fileName = rawName
-    try {
-      fileName = decodeURIComponent(rawName)
-    } catch {
-      // keep raw
-    }
-    const mimeType = String(req.header('x-mime-type') ?? 'application/octet-stream')
-
-    const stored = await storeFallbackFile({ buffer, fileName, mimeType })
-    recordTransfer('storage')
-
-    const forwardedProto = String(req.get('x-forwarded-proto') ?? '')
-      .split(',')[0]
-      ?.trim()
-    const protocol =
-      forwardedProto === 'https' || forwardedProto === 'http' ? forwardedProto : req.protocol
-    const downloadUrl = stored.downloadUrl.startsWith('http')
-      ? stored.downloadUrl
-      : `${protocol}://${req.get('host')}${stored.downloadUrl}`
-
-    res.status(201).json({
-      transferId: stored.transferId,
-      downloadUrl,
-      path: stored.path,
-    })
-  } catch (err) {
-    next(err)
-  }
 })
 
 transfersRouter.get('/:transferId/download', async (req, res, next) => {

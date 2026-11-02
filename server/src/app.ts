@@ -3,8 +3,10 @@ import express from 'express'
 import { config } from './config.js'
 import { meetingsRouter } from './routes/meetings.js'
 import { roomsRouter } from './routes/rooms.js'
+import { roomFilesRouter } from './routes/roomFiles.js'
 import { transfersRouter } from './routes/transfers.js'
 import { getTransferStats } from './services/transferStats.js'
+import { cleanupRooms } from './services/roomCleanup.js'
 
 export function createApp() {
   const app = express()
@@ -18,7 +20,6 @@ export function createApp() {
     }),
   )
 
-  app.use('/api/transfers/upload', express.raw({ type: '*/*', limit: '32mb' }))
   app.use(express.json({ limit: '1mb' }))
 
   app.get('/health', (_req, res) => {
@@ -47,6 +48,18 @@ export function createApp() {
     res.json(getTransferStats())
   })
 
+  app.post('/internal/cleanup', async (req, res, next) => {
+    try {
+      if (!config.cleanupSecret) { res.status(503).json({ error: 'Cleanup secret not configured' }); return }
+      if (req.header('authorization') !== `Bearer ${config.cleanupSecret}`) {
+        res.status(401).json({ error: 'Unauthorized' })
+        return
+      }
+      res.json(await cleanupRooms())
+    } catch (error) { next(error) }
+  })
+
+  app.use('/api/rooms', roomFilesRouter)
   app.use('/api/rooms', roomsRouter)
   app.use('/api/meetings', meetingsRouter)
   app.use('/api/transfers', transfersRouter)

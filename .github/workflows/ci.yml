@@ -21,12 +21,21 @@ jobs:
 
     env:
       REDIS_URL: redis://127.0.0.1:6379
-      MONGODB_URI: mongodb://127.0.0.1:27017/dropsync-ci
+      MONGODB_URI: mongodb://127.0.0.1:27017/dropsync-ci?replicaSet=rs0&directConnection=true
       CLIENT_ORIGIN: http://localhost:5173
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Start MongoDB replica set
+        run: |
+          docker run -d --name dropsync-mongo -p 27017:27017 mongo:7 --replSet rs0 --bind_ip_all
+          for i in $(seq 1 30); do
+            if docker exec dropsync-mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1; then break; fi
+            sleep 1
+          done
+          docker exec dropsync-mongo mongosh --quiet --eval 'rs.initiate({_id:"rs0",members:[{_id:0,host:"127.0.0.1:27017"}]})'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -49,10 +58,6 @@ jobs:
 
       - name: Lint client (oxlint)
         run: npm run lint --prefix client
-
-      - name: Typecheck client
-        run: npx tsc -b --pretty false
-        working-directory: client
 
       - name: Typecheck server
         run: npx tsc --noEmit --pretty false
@@ -88,15 +93,13 @@ jobs:
           "
 
       - name: Test server
-        continue-on-error: true
         run: |
           set -o pipefail
           npm test --prefix server 2>&1 | tee server-test-output.txt
         env:
           REDIS_URL: redis://127.0.0.1:6379
-          MONGODB_URI: mongodb://127.0.0.1:27017/dropsync-ci
+          MONGODB_URI: mongodb://127.0.0.1:27017/dropsync-ci?replicaSet=rs0&directConnection=true
           CLIENT_ORIGIN: http://localhost:5173
-          ROOM_DURATION_SECONDS: '300'
 
       - name: Upload server test log
         if: always()

@@ -4,6 +4,7 @@ import { io as ioClient, type Socket as ClientSocket } from 'socket.io-client'
 import request from 'supertest'
 import { createApp } from '../app.js'
 import { connectRedis, disconnectRedis, getRedis } from '../db/redis.js'
+import { connectMongo, disconnectMongo } from '../db/mongo.js'
 import { createSocketServer } from '../socket/index.js'
 import { roomStore } from '../store/roomStore.js'
 import type { Server } from 'socket.io'
@@ -25,6 +26,7 @@ export async function startTestServer(): Promise<TestHarness> {
   // Avoid Socket.IO Redis adapter in tests — room/meeting state still uses Redis via stores.
   const app = createApp()
   const httpServer = createServer(app)
+  await connectMongo()
   await connectRedis()
   const io = createSocketServer(httpServer)
 
@@ -57,6 +59,7 @@ export async function stopTestServer(): Promise<void> {
     })
   }
   await disconnectRedis()
+  await disconnectMongo()
 }
 
 export function connectClient(baseUrl: string): ClientSocket {

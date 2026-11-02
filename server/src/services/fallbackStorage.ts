@@ -1,7 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { PutObjectCommand, S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
-import { config } from '../config.js'
 import { getRedis } from '../db/redis.js'
 
 const MEMORY_TTL_MS = 15 * 60 * 1000
@@ -23,19 +20,6 @@ function pruneMemory() {
   }
 }
 
-function getS3(): S3Client | null {
-  if (!config.storage) return null
-  return new S3Client({
-    region: config.storage.region,
-    endpoint: config.storage.endpoint,
-    credentials: {
-      accessKeyId: config.storage.accessKey,
-      secretAccessKey: config.storage.secretKey,
-    },
-    forcePathStyle: true,
-  })
-}
-
 function redisMetaKey(transferId: string) {
   return `transfer:meta:${transferId}`
 }
@@ -51,30 +35,6 @@ export async function storeFallbackFile(input: {
 }): Promise<{ transferId: string; downloadUrl: string; path: 'storage' }> {
   pruneMemory()
   const transferId = randomUUID()
-
-  const s3 = getS3()
-  if (s3 && config.storage) {
-    const key = `transfers/${transferId}/${encodeURIComponent(input.fileName)}`
-    await s3.send(
-      new PutObjectCommand({
-        Bucket: config.storage.bucket,
-        Key: key,
-        Body: input.buffer,
-        ContentType: input.mimeType,
-      }),
-    )
-
-    const downloadUrl = await getSignedUrl(
-      s3,
-      new GetObjectCommand({
-        Bucket: config.storage.bucket,
-        Key: key,
-      }),
-      { expiresIn: 900 },
-    )
-
-    return { transferId, downloadUrl, path: 'storage' }
-  }
 
   // Prefer Redis so any Render instance can serve the download.
   try {
