@@ -7,6 +7,7 @@ import { ActivityFeed } from "../components/room/ActivityFeed";
 import { ExpiryTimer } from "../components/room/ExpiryTimer";
 import { MessageInput } from "../components/room/MessageInput";
 import { RoomCodeDisplay } from "../components/room/RoomCodeDisplay";
+import { RoomCallDock } from "../components/room/RoomCallDock";
 import { useRoom } from "../context/RoomContext";
 import { normalizeRoomCode } from "../utils/roomCode";
 import { formatFileSize } from "../utils/formatFileSize";
@@ -25,7 +26,7 @@ export function RoomPage() {
   const code = normalizeRoomCode(rawCode ?? "");
   const navigate = useNavigate();
   const {
-    room, participantId, recoveryKey, recoveryKeyForCode, uploads, rateLimitHint, isLoading,
+    room, participantId, connection, recoveryKey, recoveryKeyForCode, uploads, rateLimitHint, isLoading,
     leaveRoom, restoreRoom, refreshRoom, recoverRoom, deleteRoom,
     sendMessage, sendClipboard, sendCodeSnippet, sendFile, downloadFile
   } = useRoom();
@@ -38,6 +39,8 @@ export function RoomPage() {
   const [confirmCode, setConfirmCode] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [callOpen, setCallOpen] = useState(false);
+  const [callCompact, setCallCompact] = useState(false);
   const fileInputRef = useRef(null);
   const availableKey = keyInput.trim() || recoveryKey || recoveryKeyForCode(code);
   useEffect(() => {
@@ -88,8 +91,8 @@ export function RoomPage() {
   const codeItems = room.activities.filter((item) => item.type === "code");
   const roomTitle = room.name || `Room ${room.code}`;
   return <AppShell roomLayout>
-    <Header roomName={roomTitle} showOnline={active} onlineCount={room.participants.filter((person) => person.isOnline).length} rightSlot={!active && <span className="ds-status">Read-only recovery</span>} />
-    <main className="ds-dashboard">
+    <Header roomName={roomTitle} showOnline={active} onlineCount={room.participants.filter((person) => person.isOnline).length} onCallClick={active ? () => { setCallOpen(true); setCallCompact(false); } : undefined} rightSlot={!active && <span className="ds-status">Read-only recovery</span>} />
+    <main className={`ds-dashboard ${callOpen && !callCompact ? "call-expanded" : ""}`}>
       <aside className="ds-sidebar">
         <div className="ds-mobile-room-title"><strong>{roomTitle}</strong><span>{room.code}</span></div>
         <nav className="ds-sidebar-nav" aria-label="Room sections">{sections.map(({ id, label, icon: Icon }) => <button key={id} className={`ds-sidebar-link ${section === id ? "selected" : ""}`} onClick={() => setSection(id)}><Icon size={17} /><span>{label}</span>{id === "files" && files.length > 0 && <small>{files.length}</small>}</button>)}</nav>
@@ -97,14 +100,15 @@ export function RoomPage() {
       </aside>
       <section className={`ds-workspace ${section === "chat" || section === "code" ? "ds-workspace-chat" : ""}`}>
         {!active && <div className="ds-recovery-banner"><Clock3 size={18} /><span>This room has expired. You can read and download until {room.recoveryDeadline?.toLocaleString()}. The creator can reopen it.</span></div>}
-        {section === "chat" && <><div className="ds-panel-header"><div><h1>Chat</h1><p>Messages, links and shared activity in one place.</p></div><button className="ds-outline-button" onClick={copyInvite}>{copied ? <Check size={16} /> : <Copy size={16} />}{copied ? "Copied" : "Invite"}</button></div><div className="ds-chat-content"><ActivityFeed activities={room.activities} selfParticipantId={participantId} onDownload={handleDownload} title="Conversation" /></div>{active && <MessageInput onSend={sendMessage} onSendClipboard={sendClipboard} onSendCode={sendCodeSnippet} onSendFile={sendFile} rateLimitHint={rateLimitHint} />}</>}
+        {section === "chat" && <><div className="ds-panel-header"><div><h1>Chat</h1><p>Messages, links and shared activity in one place.</p></div><button className="ds-outline-button" onClick={copyInvite}>{copied ? <Check size={16} /> : <Copy size={16} />}{copied ? "Copied" : "Room Link"}</button></div><div className="ds-chat-content"><ActivityFeed activities={room.activities} selfParticipantId={participantId} onDownload={handleDownload} title="Conversation" /></div>{active && <MessageInput onSend={sendMessage} onSendClipboard={sendClipboard} onSendCode={sendCodeSnippet} onSendFile={sendFile} rateLimitHint={rateLimitHint} onTyping={() => setCallCompact(true)} />}</>}
         {section === "files" && <><div className="ds-panel-header"><div><h1>Files</h1><p>{formatFileSize(room.storageBytes + room.reservedBytes)} of 2 GiB used or reserved</p></div>{active && <button className="ds-primary-button ds-upload-button" onClick={() => fileInputRef.current?.click()}><UploadCloud size={17} />Upload Files</button>}</div><input ref={fileInputRef} type="file" multiple hidden onChange={(event) => { selectFiles(event.target.files); event.target.value = ""; }} />{active && <div className={`ds-dropzone ${dragActive ? "dragging" : ""}`} onDragOver={(event) => { event.preventDefault(); setDragActive(true); }} onDragLeave={() => setDragActive(false)} onDrop={onDrop}><UploadCloud size={34} /><strong>Drag & drop files here</strong><span>or <button onClick={() => fileInputRef.current?.click()}>click to browse</button></span><small>Up to 500 MiB per file</small></div>}<div className="ds-file-table"><div className="ds-file-head"><span>Name</span><span>Size</span><span>Uploaded</span><span /></div>{files.length ? files.map((item) => <div className="ds-file-row" key={item.id}><div className="ds-file-name"><FileText size={18} /><span>{item.fileMeta.fileName}</span></div><span>{formatFileSize(item.fileMeta.fileSize)}</span><span>{formatTime(item.timestamp)}</span><button aria-label={`Download ${item.fileMeta.fileName}`} onClick={() => void handleDownload(item.fileMeta.transferId)}><Download size={18} /></button></div>) : <div className="ds-table-empty">No files shared yet.</div>}</div></>}
-        {section === "code" && <><div className="ds-panel-header"><div><h1>Code Snippets</h1><p>Code shared by this room’s members.</p></div></div><div className="ds-code-content"><ActivityFeed activities={codeItems} selfParticipantId={participantId} title="Shared code" /></div>{active && <MessageInput onSend={sendMessage} onSendClipboard={sendClipboard} onSendCode={sendCodeSnippet} onSendFile={sendFile} rateLimitHint={rateLimitHint} />}</>}
+        {section === "code" && <><div className="ds-panel-header"><div><h1>Code Snippets</h1><p>Code shared by this room’s members.</p></div></div><div className="ds-code-content"><ActivityFeed activities={codeItems} selfParticipantId={participantId} title="Shared code" /></div>{active && <MessageInput onSend={sendMessage} onSendClipboard={sendClipboard} onSendCode={sendCodeSnippet} onSendFile={sendFile} rateLimitHint={rateLimitHint} onTyping={() => setCallCompact(true)} />}</>}
         {section === "participants" && <><div className="ds-panel-header"><div><h1>Participants</h1><p>{room.participants.length} people have joined this room.</p></div><button className="ds-outline-button" onClick={copyInvite}>{copied ? <Check size={16} /> : <Copy size={16} />}{copied ? "Copied" : "Copy invite"}</button></div><div className="ds-people-grid">{room.participants.map((person) => <div className="ds-person" key={person.id}><span className="ds-person-avatar">{(person.name || "?").slice(0, 1).toUpperCase()}</span><span><strong>{person.isYou ? "You" : person.name}</strong><small>{person.isOnline ? "Online" : "Offline"}</small></span><span className={`ds-presence ${person.isOnline ? "online" : ""}`} /></div>)}</div></>}
         {section === "settings" && <><div className="ds-panel-header"><div><h1>Room Settings</h1><p>Sharing, storage and recovery controls.</p></div></div><div className="ds-settings-grid"><div className="ds-settings-card"><h2>Invite people</h2><RoomCodeDisplay code={room.code} joinUrl={`${window.location.origin}/?join=${room.code}`} /></div><div className="ds-settings-card"><h2>Storage & recovery</h2><p>{formatFileSize(room.storageBytes + room.reservedBytes)} of 2 GiB used or reserved</p><p>Original duration: {room.durationMinutes} minutes</p>{recoveryKey && <><label>Creator recovery key</label><div className="ds-secret">{recoveryKey}</div><button className="ds-text-link" onClick={() => void navigator.clipboard.writeText(recoveryKey)}>Copy recovery key</button><small>Save this key to reopen or delete the room.</small></>}{!active && recoveryKey && <button className="ds-primary-button" disabled={busy} onClick={recover}>Reopen for {room.durationMinutes} minutes</button>}</div></div>{recoveryKey && <div className="ds-danger-zone"><button className="ds-text-link ds-danger" onClick={() => setShowDelete(!showDelete)}>Delete room now</button>{showDelete && <><p>Type <strong>{code}</strong> to confirm. Access stops now; signed links may work for up to five minutes.</p><input className="ds-field" value={confirmCode} onChange={(event) => setConfirmCode(event.target.value)} placeholder={code} /><button className="ds-danger-button" disabled={busy || confirmCode !== code} onClick={remove}>Confirm deletion</button></>}</div>}</>}
         {uploads.map((upload) => <div key={upload.id} className={`ds-upload-progress ${upload.status === "failed" ? "failed" : ""}`}><span>{upload.name}: {upload.status === "failed" ? `${upload.error}. Select the same file to resume.` : `${Math.round(upload.progress * 100)}% ${upload.status}`}</span>{upload.status !== "failed" && <div><span style={{ width: `${Math.round(upload.progress * 100)}%` }} /></div>}</div>)}
         {error && <p className="ds-form-error">{error}</p>}
       </section>
+      {active && <RoomCallDock key={code} code={code} participantId={participantId} creatorId={room.participants[0]?.id} connected={connection.connected} open={callOpen} compact={callCompact} onCompact={() => setCallCompact(true)} onExpand={() => { setCallOpen(true); setCallCompact(false); }} onClose={() => setCallOpen(false)} />}
     </main>
   </AppShell>;
 }

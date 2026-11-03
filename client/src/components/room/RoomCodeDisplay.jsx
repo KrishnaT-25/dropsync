@@ -5,6 +5,7 @@ import { useState } from "react";
 import { getRoomCodeChars } from "../../utils/roomCode";
 function RoomCodeDisplay({ code, joinUrl }) {
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const chars = getRoomCodeChars(code);
   const handleCopy = async () => {
     try {
@@ -51,7 +52,8 @@ function RoomCodeDisplay({ code, joinUrl }) {
           ]
         }
       )
-    ] })
+      ] }),
+      /* @__PURE__ */ jsx("button", { type: "button", className: "ds-outline-button", onClick: async () => { await navigator.clipboard.writeText(joinUrl); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2e3); }, children: linkCopied ? "Room Link copied" : "Copy Room Link" })
   ] });
 }
 export {

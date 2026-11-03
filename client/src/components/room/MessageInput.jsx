@@ -6,7 +6,8 @@ function MessageInput({
   onSendClipboard,
   onSendCode,
   onSendFile,
-  rateLimitHint
+  rateLimitHint,
+  onTyping
 }) {
   const [value, setValue] = useState("");
   const [mode, setMode] = useState("text");
@@ -160,6 +161,7 @@ function MessageInput({
                 "textarea",
                 {
                   value,
+                  onFocus: onTyping,
                   onChange: (e) => setValue(e.target.value),
                   placeholder: "Paste a code snippet...",
                   rows: 3,
@@ -171,6 +173,7 @@ function MessageInput({
                 {
                   type: "text",
                   value,
+                  onFocus: onTyping,
                   onChange: (e) => setValue(e.target.value),
                   placeholder: "Share text, link, or drop files...",
                   className: "min-w-0 flex-1 bg-transparent px-1 py-2 text-sm outline-none sm:text-[15px]",

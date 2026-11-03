@@ -2,7 +2,7 @@ import { Boxes, Moon, Sun, UsersRound, Video } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import { useTheme } from "../../context/ThemeContext";
 
-export function Header({ onlineCount = 0, showOnline = false, rightSlot, roomName }) {
+export function Header({ onlineCount = 0, showOnline = false, rightSlot, roomName, onCallClick }) {
   const { theme, toggleTheme } = useTheme();
   const { search } = useLocation();
   const view = new URLSearchParams(search).get("view");
@@ -19,7 +19,7 @@ export function Header({ onlineCount = 0, showOnline = false, rightSlot, roomNam
     </nav>
     <div className="ds-header-actions">
       {showOnline && <span className="ds-online-count"><UsersRound size={16} />{onlineCount}</span>}
-      {roomName && <Link to="/?view=meet" className="ds-icon-button" aria-label="Start or join a video meeting" title="Video meetings"><Video size={17} /></Link>}
+      {roomName && onCallClick && <button type="button" onClick={onCallClick} className="ds-icon-button" aria-label="Open room call" title="Room call"><Video size={17} /></button>}
       {rightSlot}
       <button className="ds-profile" type="button" onClick={toggleTheme} title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
         <span>{theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}</span><span className="ds-theme-label">{theme === "dark" ? "Light" : "Dark"}</span>

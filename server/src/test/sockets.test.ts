@@ -95,6 +95,77 @@ describe('socket isolation and host ACL', () => {
     roomSocket.disconnect()
   })
 
+  it('keeps room activity usable during a call and isolates call signaling', async () => {
+    const created = await h.agent.post('/api/rooms').send({ durationMinutes: 5 })
+    const code = created.body.room.code as string
+    const guest = await h.agent.post(`/api/rooms/${code}/join`).send({ displayName: 'Guest' })
+    const hostSocket = connectClient(h.baseUrl)
+    const guestSocket = connectClient(h.baseUrl)
+    const outsider = connectClient(h.baseUrl)
+    await Promise.all([waitConnected(hostSocket), waitConnected(guestSocket), waitConnected(outsider)])
+    expect((await emitAck<{ ok: boolean }>(outsider, 'room-call-join', {})).ok).toBe(false)
+    for (const [client, person] of [[hostSocket, created], [guestSocket, guest]] as const) {
+      expect((await emitAck<{ ok: boolean }>(client, 'join-room', {
+        code, participantId: person.body.participantId, accessToken: person.body.accessToken,
+      })).ok).toBe(true)
+    }
+    expect((await emitAck<{ ok: boolean }>(hostSocket, 'room-call-join', {})).ok).toBe(true)
+    expect((await emitAck<{ ok: boolean; participants: unknown[] }>(guestSocket, 'room-call-join', {})).participants).toHaveLength(2)
+
+    const offer = new Promise<{ senderParticipantId: string }>((resolve) => guestSocket.once('room-call-offer', resolve))
+    hostSocket.emit('room-call-offer', { senderParticipantId: created.body.participantId, targetParticipantId: guest.body.participantId, payload: { sdp: 'test' } })
+    expect((await offer).senderParticipantId).toBe(created.body.participantId)
+
+    const message = await emitAck<{ ok: boolean }>(guestSocket, 'activity', { type: 'message', content: 'sent while on call' })
+    expect(message.ok).toBe(true)
+    const room = await h.agent.get(`/api/rooms/${code}`).set('Authorization', `Bearer ${created.body.accessToken}`)
+    expect(room.body.room.activities.some((item: { content: string }) => item.content === 'sent while on call')).toBe(true)
+
+    const remaining = new Promise<void>((resolve) => hostSocket.on('room-call-state', (next: { participants: unknown[] }) => {
+      if (next.participants.length === 1) resolve()
+    }))
+    guestSocket.emit('room-call-leave')
+    await remaining
+    const state = await emitAck<{ ok: boolean; participants: unknown[] }>(hostSocket, 'room-call-status', {})
+    expect(state.participants).toHaveLength(1)
+    hostSocket.disconnect()
+    guestSocket.disconnect()
+    outsider.disconnect()
+  })
+
+  it('enforces room-call admission and co-host moderation', async () => {
+    const created = await h.agent.post('/api/rooms').send({ durationMinutes: 5 })
+    const code = created.body.room.code as string
+    const first = await h.agent.post(`/api/rooms/${code}/join`).send({ displayName: 'First' })
+    const second = await h.agent.post(`/api/rooms/${code}/join`).send({ displayName: 'Second' })
+    const host = connectClient(h.baseUrl)
+    const cohost = connectClient(h.baseUrl)
+    const waiting = connectClient(h.baseUrl)
+    await Promise.all([waitConnected(host), waitConnected(cohost), waitConnected(waiting)])
+    for (const [client, person] of [[host, created], [cohost, first], [waiting, second]] as const) {
+      expect((await emitAck<{ ok: boolean }>(client, 'join-room', {
+        code, participantId: person.body.participantId, accessToken: person.body.accessToken,
+      })).ok).toBe(true)
+    }
+    expect((await emitAck<{ ok: boolean }>(host, 'room-call-join', {})).ok).toBe(true)
+    expect((await emitAck<{ ok: boolean }>(cohost, 'room-call-join', {})).ok).toBe(true)
+    const permissions = { requireAdmission: true, allowScreenShare: true, allowParticipantUnmute: true }
+    expect((await emitAck<{ ok: boolean }>(cohost, 'room-call-permissions', permissions)).ok).toBe(false)
+    expect((await emitAck<{ ok: boolean }>(host, 'room-call-permissions', permissions)).ok).toBe(true)
+    expect((await emitAck<{ ok: boolean; waiting: boolean }>(waiting, 'room-call-join', {})).waiting).toBe(true)
+    expect((await emitAck<{ ok: boolean }>(cohost, 'room-call-admit', { targetParticipantId: second.body.participantId })).ok).toBe(false)
+    expect((await emitAck<{ ok: boolean }>(host, 'room-call-cohost', { targetParticipantId: first.body.participantId, enabled: true })).ok).toBe(true)
+    expect((await emitAck<{ ok: boolean }>(cohost, 'room-call-admit', { targetParticipantId: second.body.participantId })).ok).toBe(true)
+    expect((await emitAck<{ ok: boolean; participants: unknown[] }>(waiting, 'room-call-join', {})).participants).toHaveLength(3)
+    expect((await emitAck<{ ok: boolean }>(cohost, 'room-call-moderate', { targetParticipantId: second.body.participantId, action: 'mute' })).ok).toBe(true)
+    waiting.emit('room-call-media', { micEnabled: true, cameraEnabled: true })
+    const state = await emitAck<{ participants: Array<{ participantId: string; micEnabled: boolean }> }>(host, 'room-call-status', {})
+    expect(state.participants.find((person) => person.participantId === second.body.participantId)?.micEnabled).toBe(false)
+    host.disconnect()
+    cohost.disconnect()
+    waiting.disconnect()
+  })
+
   it('does not leak meeting events into room channels', async () => {
     const room = await h.agent.post('/api/rooms').send({})
     const meeting = await h.agent.post('/api/meetings').send({})

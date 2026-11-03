@@ -5,7 +5,6 @@ import { AppShell } from "../components/layout/AppShell";
 import { Header } from "../components/layout/Header";
 import { EntryTabs } from "../components/home/EntryTabs";
 import { useRoom } from "../context/RoomContext";
-import { isValidMeetingCode, normalizeMeetingCode } from "../utils/meetingCode";
 import { isValidRoomCode, normalizeRoomCode } from "../utils/roomCode";
 
 const features = [
@@ -19,13 +18,9 @@ export function HomePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { joinRoom } = useRoom();
-  const view = searchParams.get("view") || (searchParams.get("joinCode") ? "join" : "home");
+  const requestedView = searchParams.get("view");
+  const view = requestedView === "meet" ? "create" : requestedView || (searchParams.get("joinCode") ? "join" : "home");
   useEffect(() => {
-    const meetCode = searchParams.get("meet");
-    if (meetCode && isValidMeetingCode(meetCode)) {
-      navigate(`/meet/${normalizeMeetingCode(meetCode)}`, { replace: true });
-      return;
-    }
     const joinCode = searchParams.get("join");
     if (!joinCode || !isValidRoomCode(joinCode) || searchParams.get("needPassword") === "1") return;
     const normalized = normalizeRoomCode(joinCode);
@@ -49,7 +44,6 @@ export function HomePage() {
           <button className="ds-entry-card" onClick={() => navigate("/?view=join")}><UsersRound size={34} /><strong>Join a Room</strong><span>Enter a room code to collaborate</span></button>
           <button className="ds-entry-card" onClick={() => navigate("/?view=create")}><PlusCircle size={36} /><strong>Create a Room</strong><span>Start a new room and invite others</span></button>
         </div>
-        <button className="ds-text-link ds-meet-link" onClick={() => navigate("/?view=meet")}>Looking for a video call? Open meetings <span aria-hidden>↗</span></button>
       </> : <EntryTabs view={view} />}
     </main>
   </AppShell>;
