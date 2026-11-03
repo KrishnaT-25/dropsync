@@ -126,6 +126,12 @@ export function registerRoomCallSocketHandlers(io: Server, socket: Socket, curre
     }
   })
   socket.on('room-call-leave', () => { void leave() })
+  socket.on('room-call-end', async (_payload, ack) => {
+    const session = await validSession()
+    if (!session || !isHost(session)) return ack?.({ ok: false, error: 'Host access required' })
+    await endRoomCall(io, session.code)
+    ack?.({ ok: true })
+  })
   socket.on('room-call-permissions', async (payload, ack) => {
     const session = await validSession()
     const parsed = permissionsSchema.safeParse(payload)

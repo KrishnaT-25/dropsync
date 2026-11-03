@@ -52,7 +52,7 @@ DropSync uses one room for collaboration and calling. Create or join a room with
 - Open the video button in an active room, then start or join its call.
 - Call signaling uses the existing authorized room socket. The room remains open for chat and files.
 - Focusing the message/code input minimizes the video dock; expand it again from the dock controls.
-- The room creator can require admission, allow or block screen sharing/unmuting, mute or remove callers, and appoint co-hosts. Co-hosts can admit, mute, and remove callers.
+- The room creator can require admission, allow or block screen sharing/unmuting, mute or remove callers, appoint co-hosts, and end the call for everyone. Co-hosts can admit, mute, and remove callers.
 - Expiry ends room access and the call at the room deadline. Calls use a WebRTC mesh capped at six people.
 
 ---
