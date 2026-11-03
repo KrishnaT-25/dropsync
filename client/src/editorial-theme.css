@@ -431,7 +431,7 @@ html:root .ds-call-dock { position: fixed; z-index: 40; right: 22px; top: 90px; 
   html:root .ds-dashboard.call-expanded { grid-template-columns: 245px minmax(0, 1fr) minmax(310px, 390px); }
   html:root .ds-dashboard.call-expanded .ds-call-dock:not(.compact) { position: static; grid-column: 3; grid-row: 1; width: auto; max-height: none; border: 0; border-left: 1px solid var(--border); border-radius: 0; box-shadow: none; }
 }
-html:root .ds-call-dock.compact { width: min(220px, calc(100vw - 26px)); right: 12px; top: 82px; }
+html:root .ds-call-dock.compact { width: min(220px, calc(100vw - 26px)); right: 12px; top: auto; bottom: 110px; }
 html:root .ds-call-heading, html:root .ds-call-heading > div, html:root .ds-call-heading-actions, html:root .ds-call-controls { display: flex; align-items: center; gap: 9px; }
 html:root .ds-call-heading { justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--border); }
 html:root .ds-call-heading strong { font-size: 13px; }

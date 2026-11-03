@@ -95,7 +95,7 @@ export function RoomPage() {
     <main className={`ds-dashboard ${callOpen && !callCompact ? "call-expanded" : ""}`}>
       <aside className="ds-sidebar">
         <div className="ds-mobile-room-title"><strong>{roomTitle}</strong><span>{room.code}</span></div>
-        <nav className="ds-sidebar-nav" aria-label="Room sections">{sections.map(({ id, label, icon: Icon }) => <button key={id} className={`ds-sidebar-link ${section === id ? "selected" : ""}`} onClick={() => setSection(id)}><Icon size={17} /><span>{label}</span>{id === "files" && files.length > 0 && <small>{files.length}</small>}</button>)}</nav>
+        <nav className="ds-sidebar-nav" aria-label="Room sections">{sections.map(({ id, label, icon: Icon }) => <button key={id} className={`ds-sidebar-link ${section === id ? "selected" : ""}`} onClick={() => { setSection(id); if (id === "chat" || id === "code" || id === "files") setCallCompact(true); }}><Icon size={17} /><span>{label}</span>{id === "files" && files.length > 0 && <small>{files.length}</small>}</button>)}</nav>
         <div className="ds-sidebar-bottom"><div className="ds-expiry-card"><span>Room {active ? "expires in" : "recoverable until"}</span><ExpiryTimer expiresAt={room.expiresAt} recoveryDeadline={room.recoveryDeadline} status={room.status} onExpire={() => void refreshRoom(code)} /></div><button className="ds-leave" onClick={() => { leaveRoom(); navigate("/"); }}><LogOut size={16} />Leave room</button></div>
       </aside>
       <section className={`ds-workspace ${section === "chat" || section === "code" ? "ds-workspace-chat" : ""}`}>
