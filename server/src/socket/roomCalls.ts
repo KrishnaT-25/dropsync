@@ -57,6 +57,10 @@ export async function endRoomCall(io: Server, code: string) {
     await member.leave(channel(code))
     io.to(member.id).emit('room-call-ended')
   }
+  const roomSockets = await io.in(code).fetchSockets()
+  for (const member of roomSockets) {
+    if (member.data.roomCallWaiting === code) io.to(member.id).emit('room-call-denied')
+  }
   await publish(io, code)
 }
 
