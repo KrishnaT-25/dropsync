@@ -8,14 +8,15 @@ For setup and deploy steps, see the root [README.md](../README.md).
 
 ## 1. Product overview
 
-DropSync is a monorepo with one room-based collaboration product:
+DropSync is a monorepo with two user-facing products sharing one API:
 
 | Surface | Route | Purpose |
 |---------|-------|---------|
-| Home | `/` | Create/join room by code or Room Link |
-| Room | `/room/:code` | Timed collaboration room, files, recovery, and integrated call |
+| Home | `/` | Create/join room; start/join Meet |
+| Room | `/room/:code` | Timed share room with file recovery |
+| Meet | `/meet/:code` | Standalone video call |
 
-The room call uses the same authorized room socket as chat and files. The video dock stays on the room page and shrinks when the composer gains focus. Legacy meeting server code remains for compatibility, but the client no longer exposes a separate meeting route.
+Rooms no longer embed “start meeting” inside the room UI. Video lives in the Meet flow only.
 
 ---
 
@@ -23,14 +24,14 @@ The room call uses the same authorized room socket as chat and files. The video 
 
 ```
 Client (Vercel)
-  ├── REST  → rooms, multipart file control, ice-servers
-  ├── Socket.IO → live room state + in-room call signaling
+  ├── REST  → rooms, multipart file control, meetings, ice-servers
+  ├── Socket.IO → live room/meeting state + signaling
   ├── S3 signed URLs → direct file upload and download
-  └── WebRTC → mesh A/V inside rooms
+  └── WebRTC → mesh A/V for meetings
 
 Server (Render)
   ├── Express REST
-  ├── Socket.IO (room channel = code; call channel = room-call:{code})
+  ├── Socket.IO (room channel = code; meeting channel = meeting:{code})
   ├── Redis → presence, expiry notices, rate limits, Socket.IO fan-out
   ├── MongoDB → authoritative rooms, grants, activity, file metadata, quotas
   └── private S3 → retained file objects
@@ -49,8 +50,8 @@ GitHub Actions → hourly authenticated cleanup call to the API
 | Context | Role |
 |---------|------|
 | `RoomContext` | Room session, activities, file transfers, rate-limit hint |
-| `MeetingSessionContext` | Legacy standalone meeting code; no client route |
-| `MeetingContext` | Legacy standalone media context |
+| `MeetingSessionContext` | Meet join/create, roster, host actions, socket binding |
+| `MeetingContext` | Local media (`getUserMedia` / `getDisplayMedia`), tiles, WebRTC mesh wiring |
 | `ThemeContext` | Dark / light CSS variables |
 
 ### Key services
@@ -60,18 +61,17 @@ GitHub Actions → hourly authenticated cleanup call to the API
 | `services/api.js` | REST helpers including `getIceServers()` |
 | `services/socket.js` | Room Socket.IO with bearer-token join |
 | `services/roomFiles.js` | Direct S3 multipart upload, retry, and resume |
-| `components/room/RoomCallDock.jsx` | In-room media, compact video dock, call moderation |
 | `services/meetingSocket.js` | Meeting Socket.IO |
 | `services/meetingWebRTC.js` | One `RTCPeerConnection` per remote peer; ICE queue; `replaceTrack` for screen |
 | `services/meetingApi.js` | Meeting REST |
 
-### Room call media notes
+### Meet media notes
 
 - Mesh size hard-capped at **6** participants.
 - Lexicographic participant IDs decide who creates the offer (glare avoidance).
 - Screen share uses `replaceTrack` on the existing video sender so all peers see the share without a new connection.
-- Host/co-host force-mute emits `room-call-force-muted`; the client disables its microphone and the server rejects an unauthorized unmute state.
-- The full dock occupies a third room column on desktop. Focusing chat/code input makes it compact while remote media playback stays mounted.
+- Host force-mute: server emits `force-muted` → client disables local mic track (`dropsync-force-mute`) and receivers respect `isMuted` on tiles.
+- UI: screen share → large stage + strip; pin/unpin any tile to the stage.
 
 ---
 
@@ -88,7 +88,6 @@ GitHub Actions → hourly authenticated cleanup call to the API
 ### Socket modules
 
 - `socket/index.ts` — room join, activity, file signal relay, leave/disconnect
-- `socket/roomCalls.ts` — authorized in-room calls, signaling, admission, co-hosts, and moderation
 - `socket/meetings.ts` — meeting join, media state, activity, **targeted** media signal relay, host ACL
 
 Host-only actions are enforced server-side (`host-mute`, `host-remove`, `host-end`). Non-hosts are ignored.
@@ -129,13 +128,13 @@ Clients surface `rate_limited` as a calm inline “Slow down a bit” message.
 3. Server verifies object size, commits metadata, and publishes file activity
 4. Members request a signed download URL; incomplete uploads stay private
 
-### Start a room call
+### Start a Meet
 
-1. Create or join a room using a Room Code or Room Link.
-2. The existing `join-room` socket authenticates the participant grant.
-3. Open the room's video button. `room-call-join` checks the active room and reserves one of six mesh slots.
-4. Offer/answer/ICE pass over targeted `room-call-*` socket events. WebRTC carries media directly between peers or through TURN.
-5. Chat, code, and direct S3 file uploads continue on the room page. The video dock shrinks while typing.
+1. `POST /api/meetings` → host `participantId` + code
+2. Lobby → `join-meeting` socket
+3. `MeetingContext` acquires media and `meetingWebRTC.syncPeers`
+4. Offer/answer/ICE over meeting signal events
+5. Screen share → `replaceTrack` + `meeting-media-state` (`isScreenSharing: true`) for UI stage on all clients
 
 ---
 
@@ -172,7 +171,7 @@ Before a PR:
 
 1. `npm run build` (root or both packages)
 2. `npm test` with Redis and MongoDB replica set up
-3. Manual [room call check](./manual-room-call.md) if you touched WebRTC or room call UI
+3. Manual Meet check if you touched WebRTC / meeting UI
 4. Keep room file bytes on direct S3 requests
 5. Keep host ACL logic in `meetings.ts` intact unless fixing a proven bug
 

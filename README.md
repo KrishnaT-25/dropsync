@@ -2,7 +2,10 @@
 
 Ephemeral collaboration for quick shares and small video calls.
 
-DropSync uses one room for collaboration and calling. Create or join a room with a Room Code or Room Link, then start a video call inside it. Chat, code, and file sharing remain available while the call is running; focusing the composer shrinks the video dock.
+DropSync has two complementary flows:
+
+1. **Rooms** — short-lived spaces to share text, links, files, clipboard, and code (optional password, QR join, live activity feed).
+2. **Meet** — standalone calls at `/meet/:code` with P2P audio/video, screen share, pin/unpin, a host-controlled waiting room, meeting permissions, and co-host moderation.
 
 ---
 
@@ -42,18 +45,17 @@ DropSync uses one room for collaboration and calling. Create or join a room with
 - QR invite, expiry countdown, participant list
 - Activity feed: messages, links, clipboard, code snippets, files
 - Drag-and-drop / attach files (resumable direct S3 upload, 500 MiB per file)
-- In-room WebRTC calls for up to six people, with microphone/camera controls and screen sharing
-- Room Link invites, optional call admission, creator/co-host moderation, and call permissions
 - Dark / light theme
 - Redis-backed rate limits on create/join/activity (client shows “Slow down a bit”)
 
-### Room calls
+### Meet (standalone)
 
-- Open the video button in an active room, then start or join its call.
-- Call signaling uses the existing authorized room socket. The room remains open for chat and files.
-- Focusing the message/code input minimizes the video dock; expand it again from the dock controls.
-- The room creator can require admission, allow or block screen sharing/unmuting, mute or remove callers, appoint co-hosts, and end the call for everyone. Co-hosts can admit, mute, and remove callers.
-- Expiry ends room access and the call at the room deadline. Calls use a WebRTC mesh capped at six people.
+- Create or join via `/meet/:code` (decoupled from rooms)
+- Live camera + microphone between participants (P2P mesh, max 6)
+- Screen share with Meet-style stage + participant strip
+- Pin / unpin any video tile
+- Mute / camera toggle; host force-mute, remove, end-for-everyone
+- Meeting activity log; mesh size capped for reliability
 
 ---
 
@@ -64,15 +66,15 @@ DropSync/
 ├── client/                 # Vite React app
 │   ├── src/
 │   │   ├── components/     # UI (room, meeting, layout, home)
-│   │   ├── context/        # Room and Theme; legacy Meeting contexts
-│   │   ├── pages/          # Home and Room; legacy Meeting page
+│   │   ├── context/        # Room, Meeting, MeetingSession, Theme
+│   │   ├── pages/          # Home, Room, Meet
 │   │   ├── services/       # API, sockets, fileTransfer, meetingWebRTC
 │   │   └── types/
 │   └── vercel.json         # SPA rewrites
 ├── server/                 # Express + Socket.IO API
 │   ├── src/
 │   │   ├── routes/         # rooms, meetings, transfers
-│   │   ├── socket/         # room, room-call, and legacy meeting handlers
+│   │   ├── socket/         # room + meeting handlers
 │   │   ├── store/          # Mongo room lifecycle, Redis meeting store
 │   │   ├── services/       # rate limits, S3 multipart files, cleanup
 │   │   └── test/           # Vitest (HTTP + socket)
@@ -161,7 +163,7 @@ npm run dev
                                               ┌────────────┴────────────┐
                                               ▼                         ▼
                                          Redis (presence,          MongoDB
-                                         call locks, rate limits)  (room lifecycle,
+                                         meetings, rate limits)    (room lifecycle,
                                                                   activity, grants)
 
 Browser files go directly to a private S3 bucket with short signed URLs.
@@ -171,13 +173,13 @@ Browser files go directly to a private S3 bucket with short signed URLs.
 
 | Topic | Choice |
 |-------|--------|
-| Room call topology | **Mesh** WebRTC (one `RTCPeerConnection` per remote peer), capped at **6** participants |
+| Meeting topology | **Mesh** WebRTC (one `RTCPeerConnection` per remote peer), capped at **6** participants |
 | File transfer | **Direct multipart** to private S3; no new file bytes pass through Express |
 | Room lifecycle | MongoDB is authoritative; Redis expiry events improve live UI timing |
 | Screen share | `RTCRtpSender.replaceTrack()` on existing video sender (no full renegotiation) |
 | Rate limits | Redis fixed windows (activity per socket; create/join by IP) |
 
-Manual two-browser A/V check: [docs/manual-room-call.md](docs/manual-room-call.md).
+Manual two-tab A/V checklist: [docs/manual-webrtc-meeting.md](docs/manual-webrtc-meeting.md).
 
 ---
 
@@ -196,9 +198,9 @@ Manual two-browser A/V check: [docs/manual-room-call.md](docs/manual-room-call.m
 | `POST` | `/api/rooms/:code/reopen` | Creator recovery |
 | `DELETE` | `/api/rooms/:code` | Creator early deletion |
 | `*` | `/api/rooms/:code/files/*` | Direct multipart upload and signed download |
-| `POST` | `/api/meetings` | Legacy standalone meeting API; no client entry point |
-| `GET` | `/api/meetings/:code` | Legacy meeting state |
-| `POST` | `/api/meetings/:code/join` | Legacy meeting join |
+| `POST` | `/api/meetings` | Create meeting |
+| `GET` | `/api/meetings/:code` | Meeting state |
+| `POST` | `/api/meetings/:code/join` | Join meeting |
 | `GET` | `/api/transfers/:transferId/download` | Short-lived legacy download only |
 
 Room/file shapes: [docs/temporary-storage.md](docs/temporary-storage.md). Meeting shapes: [docs/api-contract.md](docs/api-contract.md).
@@ -207,7 +209,7 @@ Room/file shapes: [docs/temporary-storage.md](docs/temporary-storage.md). Meetin
 
 **Rooms:** `join-room` with member token, `activity`, `leave-room`, `room-state`, `activity`, `room-expired`.
 
-**Room calls:** authorized `room-call-status`, `room-call-join`, `room-call-leave`, `room-call-state`, targeted `room-call-offer` / `room-call-answer` / `room-call-ice-candidate`, and call moderation events. The older standalone meeting events remain on the server for compatibility.
+**Meetings:** token-authorized `join-meeting`, `meeting-media-state`, `meeting-activity`, `meeting-offer` / `meeting-answer` / `meeting-ice-candidate`, moderation (`host-mute`, `host-remove`, `meeting-admit`, `meeting-permissions`, `meeting-cohost`, `host-end`), `leave-meeting`, and roster/waiting-room events.
 
 Full payloads: [docs/socket-events.md](docs/socket-events.md).
 
@@ -217,7 +219,7 @@ Full payloads: [docs/socket-events.md](docs/socket-events.md).
 
 - **Server:** Vitest — room access, expiry/recovery, multipart metadata, concurrent quotas, cleanup retry, socket isolation, meeting host ACL.
 - **CI:** GitHub Actions — lint/build client, typecheck/build server, Redis and MongoDB replica set, required server tests.
-- **Room A/V:** browser camera/microphone permissions need a real two-browser check; signaling and authorization are covered by socket tests.
+- **Meet A/V:** not automated in CI (flaky media permissions); use the manual guide above.
 
 ```bash
 npm test
@@ -269,7 +271,7 @@ curl https://YOUR-API/ready
 | [docs/temporary-storage.md](docs/temporary-storage.md) | Current room lifecycle, S3 setup, file API, cleanup |
 | [docs/api-contract.md](docs/api-contract.md) | REST contracts |
 | [docs/socket-events.md](docs/socket-events.md) | Socket.IO events |
-| [docs/manual-room-call.md](docs/manual-room-call.md) | Manual room call and concurrent chat/file QA |
+| [docs/manual-webrtc-meeting.md](docs/manual-webrtc-meeting.md) | Manual Meet A/V QA |
 
 ---
 

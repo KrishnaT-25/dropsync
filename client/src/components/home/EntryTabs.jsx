@@ -1,11 +1,13 @@
-import { Check, Clock3, Link2, LockKeyhole, PlusCircle, UsersRound } from "lucide-react";
+import { Check, Clock3, Link2, LockKeyhole, PlusCircle, UsersRound, Video } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useRoom } from "../../context/RoomContext";
 import * as api from "../../services/api";
-import { parseRoomLink } from "../../utils/roomLink";
+import * as meetingApi from "../../services/meetingApi";
+import { formatMeetingCode, isValidMeetingCode, normalizeMeetingCode, parseMeetingLink } from "../../utils/meetingCode";
 import { isValidRoomCode, normalizeRoomCode } from "../../utils/roomCode";
 
+const MEETING_STORAGE_KEY = "dropsync-meeting-session";
 const choices = [{ label: "1 Hour", minutes: 60 }, { label: "6 Hours", minutes: 360 }, { label: "24 Hours", minutes: 1440 }];
 
 function RecentRooms() {
@@ -40,16 +42,20 @@ export function EntryTabs({ view }) {
   const [passwordOn, setPasswordOn] = useState(false);
   const [createPassword, setCreatePassword] = useState("");
   const [joinCode, setJoinCode] = useState("");
-  const [joinMethod, setJoinMethod] = useState("code");
-  const [joinLink, setJoinLink] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
   const [needPassword, setNeedPassword] = useState(false);
+  const [meetMethod, setMeetMethod] = useState("code");
+  const [meetCodeInput, setMeetCodeInput] = useState("");
+  const [meetLinkInput, setMeetLinkInput] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     const preset = searchParams.get("joinCode") ?? searchParams.get("join");
     if (preset) setJoinCode(normalizeRoomCode(preset));
     if (searchParams.get("needPassword") === "1") setNeedPassword(true);
+    const meet = searchParams.get("meetCode");
+    if (meet && isValidMeetingCode(meet)) { setMeetCodeInput(formatMeetingCode(meet)); setMeetMethod("code"); }
   }, [searchParams]);
   const create = async (event) => {
     event.preventDefault(); setError("");
@@ -63,17 +69,35 @@ export function EntryTabs({ view }) {
   };
   const join = async (event) => {
     event.preventDefault(); setError("");
-    const normalized = joinMethod === "link" ? parseRoomLink(joinLink) : normalizeRoomCode(joinCode);
-    if (!normalized || !isValidRoomCode(normalized)) return setError(joinMethod === "link" ? "Enter a valid DropSync Room Link." : "Enter a valid 6-character room code.");
+    if (!isValidRoomCode(joinCode)) return setError("Enter a valid 6-character room code.");
+    const normalized = normalizeRoomCode(joinCode);
     const result = await joinRoom(normalized, displayName.trim() || "Guest", needPassword ? joinPassword : undefined);
     if (result.ok) return navigate(`/room/${normalized}`);
     if (result.error === "password_required" || result.error === "incorrect_password") {
       setNeedPassword(true); setError(result.error === "incorrect_password" ? "Incorrect password. Try again." : "This room requires a password.");
     } else setError("Could not join room. Check the code or try again.");
   };
+  const startMeeting = async () => {
+    setError(""); setBusy(true);
+    try {
+      const { meeting, participantId, accessToken } = await meetingApi.createMeeting();
+      sessionStorage.setItem(MEETING_STORAGE_KEY, JSON.stringify({ code: meeting.code, participantId, accessToken, isHost: true }));
+      navigate(`/meet/${meeting.code}`);
+    } catch { setError("Could not start a meeting."); }
+    finally { setBusy(false); }
+  };
+  const joinMeeting = (event) => {
+    event.preventDefault(); setError("");
+    const code = meetMethod === "code" ? meetCodeInput : parseMeetingLink(meetLinkInput);
+    if (!isValidMeetingCode(code)) return setError(meetMethod === "code" ? "Enter a valid 6-character meeting code." : "Enter a valid DropSync meeting link.");
+    sessionStorage.removeItem(MEETING_STORAGE_KEY);
+    navigate(`/meet/${normalizeMeetingCode(code)}`);
+  };
   if (view === "recent") return <RecentRooms />;
+  if (view === "meet") return <div className="ds-form-view"><div className="ds-form-heading"><Video className="ds-heading-icon" size={40} /><h1>Video <em>Meetings</em></h1><p>Connect face to face in a temporary call.</p></div>
+    <div className="ds-form-card ds-meeting-entry"><button className="ds-primary-button" disabled={busy} onClick={startMeeting}>{busy ? "Creating..." : "Create a Meeting"}</button><p className="ds-meeting-entry-note">Get a meeting code and an invite link to share before the call starts.</p><div className="ds-divider-text">or join an existing meeting</div><div className="ds-meeting-join-modes" role="group" aria-label="Join using"><button type="button" className={meetMethod === "code" ? "selected" : ""} aria-pressed={meetMethod === "code"} onClick={() => { setMeetMethod("code"); setError(""); }}>Meeting code</button><button type="button" className={meetMethod === "link" ? "selected" : ""} aria-pressed={meetMethod === "link"} onClick={() => { setMeetMethod("link"); setError(""); }}><Link2 size={15} />Meeting link</button></div><form onSubmit={joinMeeting}>{meetMethod === "code" ? <><label htmlFor="meeting-code">Meeting Code</label><input id="meeting-code" className="ds-field ds-code-field" value={meetCodeInput} onChange={(e) => { const input = e.target.value; if (/^https?:\/\//i.test(input)) { setMeetLinkInput(input); setMeetMethod("link"); } else setMeetCodeInput(formatMeetingCode(input)); setError(""); }} placeholder="ABC-DEF" autoComplete="off" spellCheck="false" /></> : <><label htmlFor="meeting-link">Meeting Link</label><input id="meeting-link" className="ds-field" value={meetLinkInput} onChange={(e) => { setMeetLinkInput(e.target.value); setError(""); }} placeholder={`${window.location.origin}/meet/ABCDEF`} autoComplete="off" spellCheck="false" /></>}<button className="ds-secondary-button" type="submit">Join Meeting</button></form>{error && <p className="ds-form-error">{error}</p>}</div></div>;
   const isCreate = view === "create";
-  return <div className="ds-form-view"><div className="ds-form-heading">{isCreate ? <PlusCircle className="ds-heading-icon" size={42} /> : <UsersRound className="ds-heading-icon" size={42} />}<h1>{isCreate ? <>Create a <em>Room</em></> : <>Join a <em>Room</em></>}</h1><p>{isCreate ? "Set up your collaboration space in seconds." : "Enter a Room Code or Room Link shared by your teammate."}</p></div>
+  return <div className="ds-form-view"><div className="ds-form-heading">{isCreate ? <PlusCircle className="ds-heading-icon" size={42} /> : <UsersRound className="ds-heading-icon" size={42} />}<h1>{isCreate ? <>Create a <em>Room</em></> : <>Join a <em>Room</em></>}</h1><p>{isCreate ? "Set up your collaboration space in seconds." : "Enter a room code shared by your teammate."}</p></div>
     {isCreate ? <form className="ds-form-card" onSubmit={create}>
       <label htmlFor="room-name">Room Name</label><input id="room-name" className="ds-field" value={roomName} onChange={(e) => setRoomName(e.target.value)} maxLength={60} placeholder="e.g. DSA Study Group" />
       <label className="ds-label-spaced" htmlFor="room-duration">Room Duration</label>
@@ -85,8 +109,7 @@ export function EntryTabs({ view }) {
       <button className="ds-primary-button" type="submit" disabled={isLoading}>{isLoading ? "Creating..." : "Create Room"}</button>
       <p className="ds-form-note"><Check size={14} />Files and activity remain available for 24 hours after expiry.</p>
     </form> : <form className="ds-form-card ds-join-card" onSubmit={join}>
-      <div className="ds-meeting-join-modes" role="group" aria-label="Join room using"><button type="button" className={joinMethod === "code" ? "selected" : ""} aria-pressed={joinMethod === "code"} onClick={() => { setJoinMethod("code"); setError(""); }}>Room Code</button><button type="button" className={joinMethod === "link" ? "selected" : ""} aria-pressed={joinMethod === "link"} onClick={() => { setJoinMethod("link"); setError(""); }}><Link2 size={15} />Room Link</button></div>
-      {joinMethod === "code" ? <><label htmlFor="join-code">Room Code</label><input id="join-code" className="ds-field ds-code-field" value={joinCode} onChange={(e) => { const value = e.target.value; if (/^https?:\/\//i.test(value)) { setJoinLink(value); setJoinMethod("link"); } else setJoinCode(normalizeRoomCode(value)); setError(""); }} maxLength={250} placeholder="DSA42X" autoComplete="off" spellCheck="false" autoFocus /></> : <><label htmlFor="join-link">Room Link</label><input id="join-link" className="ds-field" type="url" value={joinLink} onChange={(e) => { setJoinLink(e.target.value); setError(""); }} placeholder={`${window.location.origin}/?join=DSA42X`} autoComplete="off" spellCheck="false" autoFocus /></>}
+      <label htmlFor="join-code">Room Code</label><input id="join-code" className="ds-field ds-code-field" value={joinCode} onChange={(e) => { setJoinCode(normalizeRoomCode(e.target.value)); setError(""); }} maxLength={6} placeholder="DSA42X" autoComplete="off" spellCheck="false" autoFocus />
       <label className="ds-label-spaced" htmlFor="join-name">Your Name <span className="ds-optional">optional</span></label><input id="join-name" className="ds-field" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={32} placeholder="How should teammates see you?" />
       {needPassword && <><label className="ds-label-spaced" htmlFor="join-password">Room Password</label><input id="join-password" className="ds-field" type="password" value={joinPassword} onChange={(e) => setJoinPassword(e.target.value)} maxLength={64} autoComplete="current-password" placeholder="Enter room password" /></>}
       {error && <p className="ds-form-error">{error}</p>}

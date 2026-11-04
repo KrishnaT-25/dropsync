@@ -16,7 +16,6 @@ import { toPublicRoom } from '../utils/publicRoom.js'
 import { isValidRoomCode, normalizeRoomCode } from '../utils/roomCode.js'
 import { registerMeetingSocketHandlers } from './meetings.js'
 import { trackSocketCleanup } from './cleanupTasks.js'
-import { endRoomCall, registerRoomCallSocketHandlers } from './roomCalls.js'
 
 const joinSchema = z.object({
   code: z.string(),
@@ -86,7 +85,6 @@ export function createSocketServer(
   }
 
   roomStore.setOnExpire((code) => {
-    void endRoomCall(io, code)
     io.to(code).emit('room-expired')
     void io.in(code).socketsLeave(code)
   })
@@ -96,7 +94,6 @@ export function createSocketServer(
   io.on('connection', (socket) => {
     let roomSession: RoomSocketSession | null = null
     registerMeetingSocketHandlers(io, socket)
-    registerRoomCallSocketHandlers(io, socket, () => roomSession)
 
     socket.on('join-room', async (payload, ack) => {
       const ip = clientIpFromSocket(socket.handshake)

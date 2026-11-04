@@ -29,7 +29,6 @@ class MeetingWebRTCManager {
   remoteStreams = /* @__PURE__ */ new Map();
   onRemoteStream = null;
   onMeshError = null;
-  signalPrefix = "meeting";
   makingOffer = /* @__PURE__ */ new Set();
   configure(opts) {
     this.selfId = opts.selfId;
@@ -37,7 +36,6 @@ class MeetingWebRTCManager {
     this.iceServers = [{ urls: "stun:stun.l.google.com:19302" }];
     this.onRemoteStream = opts.onRemoteStream;
     this.onMeshError = opts.onMeshError ?? null;
-    this.signalPrefix = opts.signalPrefix ?? "meeting";
     this.bindSocket();
     this.iceServersReady = this.refreshIceServers();
   }
@@ -50,18 +48,18 @@ class MeetingWebRTCManager {
   }
   bindSocket() {
     if (!this.socket) return;
-    this.socket.off(`${this.signalPrefix}-offer`);
-    this.socket.off(`${this.signalPrefix}-answer`);
-    this.socket.off(`${this.signalPrefix}-ice-candidate`);
-    this.socket.on(`${this.signalPrefix}-offer`, (msg) => {
+    this.socket.off("meeting-offer");
+    this.socket.off("meeting-answer");
+    this.socket.off("meeting-ice-candidate");
+    this.socket.on("meeting-offer", (msg) => {
       if (msg.targetParticipantId !== this.selfId) return;
       void this.handleOffer(msg);
     });
-    this.socket.on(`${this.signalPrefix}-answer`, (msg) => {
+    this.socket.on("meeting-answer", (msg) => {
       if (msg.targetParticipantId !== this.selfId) return;
       void this.handleAnswer(msg);
     });
-    this.socket.on(`${this.signalPrefix}-ice-candidate`, (msg) => {
+    this.socket.on("meeting-ice-candidate", (msg) => {
       if (msg.targetParticipantId !== this.selfId) return;
       void this.handleRemoteCandidate(msg);
     });
@@ -208,7 +206,7 @@ class MeetingWebRTCManager {
     const { pc, peerId } = peer;
     pc.onicecandidate = (ev) => {
       if (!ev.candidate) return;
-      this.emitSignal(`${this.signalPrefix}-ice-candidate`, peerId, ev.candidate.toJSON());
+      this.emitSignal("meeting-ice-candidate", peerId, ev.candidate.toJSON());
     };
     pc.ontrack = (ev) => {
       let stream = this.remoteStreams.get(peerId);
@@ -248,7 +246,7 @@ class MeetingWebRTCManager {
       const peer = this.ensurePeerShell(peerId, { addOutbound: true });
       const offer = await peer.pc.createOffer();
       await peer.pc.setLocalDescription(offer);
-      this.emitSignal(`${this.signalPrefix}-offer`, peerId, { sdp: peer.pc.localDescription });
+      this.emitSignal("meeting-offer", peerId, { sdp: peer.pc.localDescription });
     } catch {
       this.closePeer(peerId);
     } finally {
@@ -282,7 +280,7 @@ class MeetingWebRTCManager {
     }
     const answer = await peer.pc.createAnswer();
     await peer.pc.setLocalDescription(answer);
-    this.emitSignal(`${this.signalPrefix}-answer`, peerId, { sdp: peer.pc.localDescription });
+    this.emitSignal("meeting-answer", peerId, { sdp: peer.pc.localDescription });
   }
   async handleAnswer(msg) {
     const payload = msg.payload;
@@ -330,9 +328,9 @@ class MeetingWebRTCManager {
   }
   dispose() {
     for (const id of [...this.peers.keys()]) this.closePeer(id);
-    this.socket?.off(`${this.signalPrefix}-offer`);
-    this.socket?.off(`${this.signalPrefix}-answer`);
-    this.socket?.off(`${this.signalPrefix}-ice-candidate`);
+    this.socket?.off("meeting-offer");
+    this.socket?.off("meeting-answer");
+    this.socket?.off("meeting-ice-candidate");
     this.placeholderVideoTrack?.stop();
     this.placeholderVideoTrack = null;
     this.outboundVideoTrack = null;
