@@ -1,6 +1,6 @@
-import { CloudUpload, PlusCircle, Radio, ShieldCheck, UsersRound, Video } from "lucide-react";
+import { ArrowRight, CloudUpload, Clock3, Code2, Link2, UsersRound, Video } from "lucide-react";
 import { useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
 import { Header } from "../components/layout/Header";
 import { EntryTabs } from "../components/home/EntryTabs";
@@ -9,10 +9,10 @@ import { isValidMeetingCode, normalizeMeetingCode } from "../utils/meetingCode";
 import { isValidRoomCode, normalizeRoomCode } from "../utils/roomCode";
 
 const features = [
-  { icon: Radio, title: "Real-Time", second: "Collaboration" },
-  { icon: CloudUpload, title: "Temporary", second: "Cloud Storage" },
-  { icon: Video, title: "Audio &", second: "Video Calls" },
-  { icon: ShieldCheck, title: "Secure &", second: "Private" },
+  { icon: CloudUpload, label: "Share files" },
+  { icon: Code2, label: "Paste code" },
+  { icon: Link2, label: "Collect links" },
+  { icon: Clock3, label: "Set an expiry" },
 ];
 
 export function HomePage() {
@@ -36,20 +36,25 @@ export function HomePage() {
   }, [searchParams, joinRoom, navigate]);
 
   return <AppShell>
+    <a className="ds-skip-link" href="#main-content">Skip to main content</a>
     <Header />
-    <main className={`ds-home-main ${view === "home" ? "ds-home-hero" : "ds-home-form"}`}>
+    <main id="main-content" tabIndex={-1} className={`ds-home-main ${view === "home" ? "ds-home-hero" : "ds-home-form"}`}>
       {view === "home" ? <>
-        <div className="ds-hero-copy">
-          <span className="ds-eyebrow">01 — YOUR WORKSPACE</span>
-          <h1>Share · Collaborate · Sync<br />in <span>Real-Time</span></h1>
-          <p>A temporary space for files, code, links and conversations.</p>
+        <div className="ds-home-intro">
+          <div className="ds-hero-copy">
+            <h1>A temporary room for everything you’re sharing.</h1>
+            <p>Bring files, code, links and conversation into one temporary room. Set how long it stays open, then share the room code with your team.</p>
+          </div>
+          <section className="ds-home-actions" aria-labelledby="ds-home-actions-title">
+            <div className="ds-home-actions-top"><span className="ds-home-actions-mark" aria-hidden="true"><UsersRound size={22} /></span><span>Temporary rooms</span></div>
+            <h2 id="ds-home-actions-title">Start sharing</h2>
+            <p>Create a room for your team, or use a code to join one.</p>
+            <Link className="ds-home-action ds-home-action-primary" to="/?view=create"><span><strong>Create a Room</strong><small>Choose a name and expiry</small></span><ArrowRight size={20} aria-hidden="true" /></Link>
+            <Link className="ds-home-action ds-home-action-secondary" to="/?view=join"><span><strong>Join a Room</strong><small>Enter a code from your team</small></span><ArrowRight size={20} aria-hidden="true" /></Link>
+            <Link className="ds-home-meet-link" to="/?view=meet"><Video size={18} aria-hidden="true" /> Need a video call? Open meetings <ArrowRight size={16} aria-hidden="true" /></Link>
+          </section>
         </div>
-        <div className="ds-feature-row">{features.map(({ icon: Icon, title, second }) => <div className="ds-feature" key={title}><span className="ds-feature-icon"><Icon size={22} /></span><strong>{title}<br />{second}</strong></div>)}</div>
-        <div className="ds-entry-cards">
-          <button className="ds-entry-card" onClick={() => navigate("/?view=join")}><UsersRound size={34} /><strong>Join a Room</strong><span>Enter a room code to collaborate</span></button>
-          <button className="ds-entry-card" onClick={() => navigate("/?view=create")}><PlusCircle size={36} /><strong>Create a Room</strong><span>Start a new room and invite others</span></button>
-        </div>
-        <button className="ds-text-link ds-meet-link" onClick={() => navigate("/?view=meet")}>Looking for a video call? Open meetings <span aria-hidden>↗</span></button>
+        <div className="ds-home-capabilities" aria-label="What you can do in a room">{features.map(({ icon: Icon, label }) => <div className="ds-home-capability" key={label}><Icon size={19} aria-hidden="true" /><span>{label}</span></div>)}</div>
       </> : <EntryTabs view={view} />}
     </main>
   </AppShell>;
